@@ -284,6 +284,14 @@ export class Game {
     return free[Math.floor(this.rng() * free.length)];
   }
 
+  /** Данные для отрисовки: общий формат для одиночной игры, дуэли и сетевого гостя. */
+  get snakes() {
+    return [{
+      body: this.snake, prevBody: this.prevSnake, direction: this.direction,
+      ghost: this.effects.ghost > 0, palette: 0, alive: !this.over,
+    }];
+  }
+
   finish(reason, events) {
     this.over = true;
     this.overReason = reason;

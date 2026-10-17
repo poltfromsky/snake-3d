@@ -1,9 +1,17 @@
 /**
- * Точка входа: связывает логику, 3D-сцену, звук и интерфейс.
+ * Точка входа: связывает логику, 3D-сцену, звук, сеть и интерфейс.
+ *
+ * Виды партий (kind):
+ *   solo  — одиночная игра (Game);
+ *   local — двое за одной клавиатурой (Duel);
+ *   host  — хозяин онлайн-комнаты: считает Duel и рассылает снимки;
+ *   guest — гость: рисует снимки хозяина и отправляет свои повороты.
  */
 import { DIRECTIONS, Game, MODES } from './core/game.js';
-import { SceneRenderer } from './render/scene.js';
+import { Duel } from './core/duel.js';
+import { SceneRenderer, THEMES } from './render/scene.js';
 import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
+import { normalizeRoomCode, OnlineLink, roomLink } from './net/online.js';
 import {
   addRecord, isRecord, loadRecords, loadSettings, saveSettings, SPEED_FACTORS,
 } from './storage.js';
@@ -18,22 +26,45 @@ const REASONS = {
   time: 'Время вышло',
 };
 
-const KEYMAP = {
-  ArrowUp: DIRECTIONS.UP, KeyW: DIRECTIONS.UP,
-  ArrowDown: DIRECTIONS.DOWN, KeyS: DIRECTIONS.DOWN,
-  ArrowLeft: DIRECTIONS.LEFT, KeyA: DIRECTIONS.LEFT,
-  ArrowRight: DIRECTIONS.RIGHT, KeyD: DIRECTIONS.RIGHT,
+const DUEL_REASONS = {
+  self: 'укусил сам себя',
+  wall: 'врезался в стену',
+  stone: 'врезался в камень',
+  rival: 'врезался в соперника',
+  headOn: 'Столкновение лоб в лоб',
+  time: 'Время вышло — решили очки',
 };
+
+const ARROWS = {
+  ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
+};
+const WASD = {
+  KeyW: 'UP', KeyS: 'DOWN', KeyA: 'LEFT', KeyD: 'RIGHT',
+};
+
+const STATE_SEND_INTERVAL_MS = 33; // ~30 снимков в секунду гостю
+const COUNTDOWN_MS = 3000;
 
 const settings = loadSettings();
 const audio = new AudioManager();
 audio.setVolumes(settings);
 const renderer = new SceneRenderer($('#scene'));
 
+let kind = 'solo';
 let game = createGame();
-let state = 'menu'; // menu | playing | paused | over
+let state = 'menu'; // menu | lobby | countdown | playing | paused | over
 let previousScreen = 'menu';
 let lastTime = performance.now();
+
+// Онлайн
+let link = null;
+let leaving = false;
+let remote = null; // { snap, receivedAt } — последний снимок у гостя
+let remoteNeedsSetup = false;
+let lastStateSent = 0;
+let countdownLeft = 0;
+let lastCountdownShown = 0;
+const rematchVotes = new Set();
 
 function createGame() {
   const narrow = window.innerWidth < window.innerHeight;
@@ -46,34 +77,83 @@ function createGame() {
   });
 }
 
+function createDuel() {
+  // Поле дуэли одинаковое у обоих игроков, поэтому не зависит от экрана.
+  return new Duel({
+    width: 26,
+    height: 16,
+    mode: settings.mode,
+    speedFactor: SPEED_FACTORS[settings.speed] ?? 1,
+  });
+}
+
+const isDuel = () => kind !== 'solo';
+const myIndex = () => (kind === 'guest' ? 1 : 0);
+
+/** То, что рисует сцена: сама игра или вид из снимка хозяина. */
+function currentView() {
+  if (kind !== 'guest' || !remote) return game;
+  const { snap, receivedAt } = remote;
+  const elapsed = performance.now() - receivedAt;
+  return {
+    opts: { width: snap.w, height: snap.h, mode: snap.mode },
+    snakes: snap.players.map((p, i) => ({
+      body: p.body, prevBody: p.prev, direction: p.dir, ghost: false, palette: i, alive: p.alive,
+    })),
+    items: snap.items,
+    obstacles: snap.obstacles,
+    // Между снимками досчитываем движение сами, чтобы змейки шли плавно.
+    stepProgress: snap.over ? 1 : Math.min(snap.progress + elapsed / snap.interval, 1),
+    over: snap.over,
+  };
+}
+
 /** Пересобирает сцену и подстраивает цвета интерфейса под тему. */
-function setupScene(currentGame, currentSettings) {
-  document.documentElement.dataset.theme = currentSettings.theme;
-  renderer.setup(currentGame, currentSettings);
+function setupScene(view = currentView()) {
+  document.documentElement.dataset.theme = settings.theme;
+  renderer.setup(view, settings, myIndex());
 }
 
 /* ---------------- Экраны ---------------- */
 
-const screens = ['menu', 'pause', 'over', 'records', 'settings'];
+const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel'];
 
 function show(name) {
   for (const s of screens) $(`#screen-${s}`).classList.toggle('hidden', s !== name);
-  $('#hud').classList.toggle('hidden', name !== null && name !== 'pause' && name !== 'over');
+  const hudVisible = name === null || name === 'pause' || name === 'over' || name === 'duel';
+  $('#hud').classList.toggle('hidden', !hudVisible);
+  document.body.classList.toggle('duel', isDuel());
+  // В онлайне паузы нет: игра у обоих общая.
+  $('#btn-pause').classList.toggle('hidden', kind === 'host' || kind === 'guest');
 }
 
-function startGame() {
-  game = createGame();
-  setupScene(game, settings);
+function beginPlaying() {
   state = 'playing';
   show(null);
-  $('#hud').classList.remove('hidden');
-  $('#hud-timer-box').classList.toggle('hidden', settings.mode !== MODES.TIMED);
+  const timed = (kind === 'guest' ? remote?.snap.mode : game.opts.mode) === MODES.TIMED;
+  $('#hud-timer-box').classList.toggle('hidden', !timed);
   audio.startMusic();
+  lastTime = performance.now();
   updateHud();
 }
 
+function startSolo() {
+  kind = 'solo';
+  game = createGame();
+  setupScene();
+  beginPlaying();
+}
+
+function startLocalDuel() {
+  kind = 'local';
+  game = createDuel();
+  setupScene();
+  beginPlaying();
+  toast('WASD против стрелок!');
+}
+
 function pause() {
-  if (state !== 'playing') return;
+  if (state !== 'playing' || kind === 'host' || kind === 'guest') return;
   state = 'paused';
   audio.pauseMusic();
   show('pause');
@@ -81,18 +161,17 @@ function pause() {
 
 function resume() {
   if (state !== 'paused') return;
-  state = 'playing';
   show(null);
-  $('#hud').classList.remove('hidden');
-  audio.startMusic();
-  lastTime = performance.now();
+  beginPlaying();
 }
 
 function toMenu() {
+  leaveRoom();
+  kind = 'solo';
   state = 'menu';
   audio.pauseMusic();
   game = createGame();
-  setupScene(game, settings);
+  setupScene();
   show('menu');
 }
 
@@ -117,21 +196,68 @@ function gameOver(reason) {
   }, 900);
 }
 
+function playerName(index) {
+  if (kind === 'local') return `Игрок ${index + 1}`;
+  return index === myIndex() ? 'Вы' : 'Друг';
+}
+
+function duelOver({ winner, reason }, scores, deathReasons) {
+  state = 'over';
+  audio.setIntensity(0);
+  renderer.shakeCamera(0.8);
+  const me = myIndex();
+  let title;
+  if (winner === null) title = 'Ничья';
+  else if (kind === 'local') title = `Победил игрок ${winner + 1}!`;
+  else title = winner === me ? 'Победа!' : 'Поражение';
+  audio.play(winner === null || (kind !== 'local' && winner !== me) ? 'die' : 'record');
+
+  let why = DUEL_REASONS[reason] ?? '';
+  if (!['headOn', 'time'].includes(reason)) {
+    const loser = deathReasons.findIndex(Boolean);
+    if (loser >= 0) why = `${playerName(loser)}: ${DUEL_REASONS[deathReasons[loser]]}`;
+  }
+  $('#duel-title').textContent = title;
+  $('#duel-reason').textContent = why;
+  $('#duel-s0').textContent = `${playerName(0)} ${scores[0]}`;
+  $('#duel-s1').textContent = `${scores[1]} ${playerName(1)}`;
+  $('#duel-status').textContent = '';
+  rematchVotes.clear();
+  setTimeout(() => { if (state === 'over') show('duel'); }, 900);
+}
+
 /* ---------------- HUD ---------------- */
 
+function formatTime(ms) {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function setHtml(el, html) {
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
 function updateHud() {
+  if (isDuel()) {
+    const scores = kind === 'guest'
+      ? (remote?.snap.players.map((p) => p.score) ?? [0, 0])
+      : game.players.map((p) => p.score);
+    const timeLeft = kind === 'guest' ? remote?.snap.timeLeft : game.timeLeftMs;
+    const theme = THEMES[settings.theme] ?? THEMES.neon;
+    const color = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
+    setHtml($('#hud-duel'), `<span style="color:${color(theme.head)}">● ${playerName(0)} <b>${scores[0]}</b></span>`
+      + `<span style="color:${color(theme.rivalHead)}"><b>${scores[1]}</b> ${playerName(1)} ●</span>`);
+    if (timeLeft != null) $('#hud-timer').textContent = formatTime(timeLeft);
+    return;
+  }
   $('#hud-score').textContent = game.score;
   $('#hud-length').textContent = game.length;
   $('#hud-level').textContent = game.level;
-  if (game.timeLeftMs != null) {
-    const s = Math.ceil(game.timeLeftMs / 1000);
-    $('#hud-timer').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  }
+  if (game.timeLeftMs != null) $('#hud-timer').textContent = formatTime(game.timeLeftMs);
   const effects = [];
   if (game.effects.slow > 0) effects.push(`<span class="effect slow">🐢 ${Math.ceil(game.effects.slow / 1000)}</span>`);
   if (game.effects.ghost > 0) effects.push(`<span class="effect ghost">👻 ${Math.ceil(game.effects.ghost / 1000)}</span>`);
-  const html = effects.join('');
-  if ($('#hud-effects').innerHTML !== html) $('#hud-effects').innerHTML = html;
+  setHtml($('#hud-effects'), effects.join(''));
 }
 
 function toast(text) {
@@ -158,7 +284,9 @@ function handleEvents(events) {
         toast(`Уровень ${e.level}`);
         break;
       case 'gameOver':
-        gameOver(e.reason);
+        if (!isDuel()) gameOver(e.reason);
+        else if (kind === 'guest') duelOver(e, e.scores, e.deaths);
+        else duelOver(e, game.players.map((p) => p.score), game.players.map((p) => p.deathReason));
         break;
       default:
         break;
@@ -171,34 +299,240 @@ function handleEvents(events) {
 function frame(now) {
   const dt = Math.min(now - lastTime, 250);
   lastTime = now;
-  if (state === 'playing') {
-    handleEvents(game.update(dt));
+
+  if (kind === 'host' && state === 'countdown') tickCountdown(dt);
+
+  if (state === 'playing' && kind !== 'guest') {
+    const events = game.update(dt);
+    if (kind === 'host' && events.length) {
+      // Гостю нужны итоговые очки и причины прямо в событии конца игры.
+      const outgoing = events.map((e) => (e.type === 'gameOver'
+        ? { ...e, scores: game.players.map((p) => p.score), deaths: game.players.map((p) => p.deathReason) }
+        : e));
+      link.send({ t: 'events', list: outgoing });
+    }
+    handleEvents(events);
     const { baseTicksPerSecond, maxTicksPerSecond } = game.opts;
     audio.setIntensity((game.ticksPerSecond - baseTicksPerSecond) / (maxTicksPerSecond - baseTicksPerSecond));
-    updateHud();
   }
-  renderer.render(game);
+  if (kind === 'host' && link?.connected && now - lastStateSent > STATE_SEND_INTERVAL_MS) {
+    link.send({ t: 'state', s: game.snapshot() });
+    lastStateSent = now;
+  }
+  if (state === 'playing' || state === 'countdown') updateHud();
+
+  if (kind === 'guest' && remoteNeedsSetup && remote) {
+    setupScene();
+    remoteNeedsSetup = false;
+  }
+  if (kind !== 'guest' || remote) renderer.render(currentView(), myIndex());
   requestAnimationFrame(frame);
+}
+
+/* ---------------- Онлайн ---------------- */
+
+function setOnlineStatus(text, isError = false) {
+  const el = $('#online-status');
+  el.textContent = text;
+  el.classList.toggle('error', isError);
+}
+
+function openOnlineScreen() {
+  leaveRoom();
+  state = 'lobby';
+  $('#online-start').classList.remove('hidden');
+  $('#online-room').classList.add('hidden');
+  setOnlineStatus('');
+  show('online');
+}
+
+function makeLink() {
+  leaving = false;
+  return new OnlineLink({
+    onOpen: () => {
+      if (kind === 'host') {
+        setOnlineStatus('Друг подключился! Начинаем…');
+        startOnlineRound();
+      } else {
+        setOnlineStatus('Подключено! Ждём старта…');
+      }
+    },
+    onMessage: handleNetMessage,
+    onClose: () => {
+      if (leaving) return;
+      toast('Друг отключился');
+      toMenu();
+    },
+    onError: (text) => {
+      setOnlineStatus(text, true);
+      if (state !== 'lobby') {
+        toast('Связь потеряна');
+        toMenu();
+      }
+    },
+  });
+}
+
+async function createRoom() {
+  leaveRoom();
+  kind = 'host';
+  link = makeLink();
+  setOnlineStatus('Создаём комнату…');
+  try {
+    const code = await link.host();
+    $('#online-start').classList.add('hidden');
+    $('#online-room').classList.remove('hidden');
+    $('#room-link').value = roomLink(code);
+    $('#room-code').textContent = code;
+    setOnlineStatus('Ждём друга… Отправьте ему ссылку.');
+  } catch {
+    kind = 'solo';
+  }
+}
+
+async function joinRoom(rawCode) {
+  const code = normalizeRoomCode(rawCode);
+  if (code.length < 4) {
+    setOnlineStatus('Введите код комнаты из ссылки друга.', true);
+    return;
+  }
+  leaveRoom();
+  kind = 'guest';
+  remote = null;
+  link = makeLink();
+  setOnlineStatus(`Подключаемся к комнате ${code}…`);
+  try {
+    await link.join(code);
+  } catch {
+    kind = 'solo';
+  }
+}
+
+function leaveRoom() {
+  if (!link) return;
+  leaving = true;
+  link.send({ t: 'bye' });
+  link.close();
+  link = null;
+  remote = null;
+}
+
+/** Хозяин: новая партия с отсчётом 3-2-1. */
+function startOnlineRound() {
+  game = createDuel();
+  rematchVotes.clear();
+  setupScene();
+  link.send({ t: 'round' });
+  link.send({ t: 'state', s: game.snapshot() });
+  state = 'countdown';
+  countdownLeft = COUNTDOWN_MS;
+  lastCountdownShown = 0;
+  show(null);
+  audio.startMusic();
+}
+
+function tickCountdown(dt) {
+  countdownLeft -= dt;
+  const n = Math.ceil(countdownLeft / 1000);
+  if (n !== lastCountdownShown && n > 0) {
+    lastCountdownShown = n;
+    showCountdown(n);
+    link.send({ t: 'countdown', n });
+  }
+  if (countdownLeft <= 0) {
+    link.send({ t: 'go' });
+    showCountdown(0);
+    beginPlaying();
+  }
+}
+
+function showCountdown(n) {
+  toast(n > 0 ? String(n) : 'Вперёд!');
+  audio.play(n > 0 ? 'click' : 'levelUp');
+}
+
+function handleNetMessage(msg) {
+  if (!msg || typeof msg !== 'object') return;
+  switch (msg.t) {
+    case 'state':
+      if (kind !== 'guest') return;
+      remote = { snap: msg.s, receivedAt: performance.now() };
+      break;
+    case 'round':
+      if (kind !== 'guest') return;
+      remoteNeedsSetup = true;
+      state = 'countdown';
+      show(null);
+      audio.startMusic();
+      break;
+    case 'countdown':
+      if (kind === 'guest') showCountdown(msg.n);
+      break;
+    case 'go':
+      if (kind === 'guest') { showCountdown(0); beginPlaying(); }
+      break;
+    case 'events':
+      if (kind === 'guest' && Array.isArray(msg.list)) handleEvents(msg.list);
+      break;
+    case 'turn':
+      if (kind === 'host' && state === 'playing' && DIRECTIONS[msg.dir]) game.turn(1, DIRECTIONS[msg.dir]);
+      break;
+    case 'rematch':
+      voteRematch(kind === 'host' ? 1 : 0, false);
+      break;
+    case 'bye':
+      leaving = true;
+      toast('Друг вышел из игры');
+      toMenu();
+      break;
+    default:
+      break;
+  }
+}
+
+/** Реванш начинается, когда его хотят оба. */
+function voteRematch(index, mine) {
+  if (kind === 'local') {
+    startLocalDuel();
+    return;
+  }
+  rematchVotes.add(index);
+  if (mine) link?.send({ t: 'rematch' });
+  if (rematchVotes.size >= 2 && kind === 'host') {
+    startOnlineRound();
+    return;
+  }
+  $('#duel-status').textContent = mine ? 'Ждём ответа друга…' : 'Друг хочет реванш!';
 }
 
 /* ---------------- Управление ---------------- */
 
+function steer(index, dirName) {
+  if (state !== 'playing') return;
+  if (kind === 'solo') game.turn(DIRECTIONS[dirName]);
+  else if (kind === 'local' || kind === 'host') game.turn(index, DIRECTIONS[dirName]);
+  else if (kind === 'guest') link?.send({ t: 'turn', dir: dirName });
+}
+
 window.addEventListener('keydown', (e) => {
   audio.unlock();
   if (e.target instanceof HTMLInputElement) return;
-  const dir = KEYMAP[e.code];
-  if (dir && state === 'playing') {
+  const arrow = ARROWS[e.code];
+  const wasd = WASD[e.code];
+  if ((arrow || wasd) && state === 'playing') {
     e.preventDefault();
-    game.turn(dir);
+    // За одной клавиатурой: WASD — первый игрок, стрелки — второй.
+    if (kind === 'local') steer(wasd ? 0 : 1, wasd ?? arrow);
+    else steer(myIndex(), wasd ?? arrow);
     return;
   }
   if (e.code === 'Space' || e.code === 'Escape' || e.code === 'KeyP') {
     e.preventDefault();
     if (state === 'playing') pause();
     else if (state === 'paused') resume();
-    else if (state === 'menu' && e.code === 'Space') startGame();
+    else if (state === 'menu' && e.code === 'Space') startSolo();
   }
-  if (e.code === 'Enter' && state === 'menu') startGame();
+  if (e.code === 'Enter' && state === 'menu') startSolo();
 });
 
 // Свайпы на телефоне.
@@ -214,8 +548,8 @@ canvas.addEventListener('pointerup', (e) => {
   const dy = e.clientY - touchStart.y;
   touchStart = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  if (Math.abs(dx) > Math.abs(dy)) game.turn(dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT);
-  else game.turn(dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP);
+  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP');
+  steer(myIndex(), dir);
 });
 
 // Свернули вкладку — ставим паузу, чтобы змейка не разбилась без игрока.
@@ -223,15 +557,31 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
 });
 
+window.addEventListener('beforeunload', () => link?.send({ t: 'bye' }));
+
 $('#btn-pause').addEventListener('click', pause);
 
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   audio.unlock();
   audio.play('click');
   switch (action) {
-    case 'play': startGame(); break;
+    case 'play': startSolo(); break;
+    case 'local': startLocalDuel(); break;
+    case 'online': openOnlineScreen(); break;
+    case 'create-room': createRoom(); break;
+    case 'copy-link':
+      try {
+        await navigator.clipboard.writeText($('#room-link').value);
+        setOnlineStatus('Ссылка скопирована — отправьте её другу. Ждём…');
+      } catch {
+        $('#room-link').select();
+        setOnlineStatus('Скопируйте ссылку вручную (Ctrl+C).');
+      }
+      break;
+    case 'rematch': voteRematch(myIndex(), true); break;
+    case 'leave': toMenu(); break;
     case 'resume': resume(); break;
     case 'menu': toMenu(); break;
     case 'records':
@@ -246,10 +596,18 @@ document.addEventListener('click', (e) => {
       break;
     case 'back':
       show(previousScreen);
-      if (previousScreen === 'menu') setupScene(game = createGame(), settings);
+      if (previousScreen === 'menu') {
+        game = createGame();
+        setupScene();
+      }
       break;
     default: break;
   }
+});
+
+$('#join-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  joinRoom($('#join-code').value);
 });
 
 /* ---------------- Меню режимов ---------------- */
@@ -269,7 +627,7 @@ $('#mode-select').addEventListener('click', (e) => {
   saveSettings(settings);
   markActive($('#mode-select'), 'mode', mode);
   game = createGame();
-  setupScene(game, settings);
+  setupScene();
 });
 
 /* ---------------- Рекорды ---------------- */
@@ -337,10 +695,12 @@ function bindSegmented(id, key, onChange) {
   });
 }
 
-bindSegmented('#set-speed', 'speed', (v) => { game.opts.speedFactor = SPEED_FACTORS[v]; });
+bindSegmented('#set-speed', 'speed', (v) => {
+  if (kind !== 'guest') game.opts.speedFactor = SPEED_FACTORS[v];
+});
 bindSegmented('#set-theme', 'theme', () => {
   // Тема меняется только в меню, чтобы не сбрасывать текущую партию.
-  if (state === 'menu') setupScene(game, settings);
+  if (state === 'menu') setupScene();
 });
 bindSegmented('#set-camera', 'camera', (v) => { renderer.cameraMode = v; });
 
@@ -367,6 +727,16 @@ function renderCredits() {
 
 markActive($('#mode-select'), 'mode', settings.mode);
 renderCredits();
-setupScene(game, settings);
+setupScene();
 show('menu');
+
+// Пришли по ссылке друга: сразу подключаемся к его комнате.
+const invited = new URLSearchParams(window.location.search).get('room');
+if (invited) {
+  history.replaceState(null, '', window.location.pathname);
+  openOnlineScreen();
+  $('#join-code').value = normalizeRoomCode(invited);
+  joinRoom(invited);
+}
+
 requestAnimationFrame(frame);

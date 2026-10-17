@@ -3,6 +3,7 @@
 ## Библиотеки
 
 - [Three.js](https://threejs.org) r170 — MIT License. Загружается с CDN jsDelivr.
+- [PeerJS](https://peerjs.com) 1.5.5 — MIT License. Загружается с CDN jsDelivr только для онлайн-игры; для установки соединения используется публичный сервер PeerJS.
 - Шрифты [Unbounded](https://fonts.google.com/specimen/Unbounded) и [Inter](https://fonts.google.com/specimen/Inter) — SIL Open Font License. Загружаются с Google Fonts.
 
 ## Звук

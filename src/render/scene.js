@@ -1,8 +1,8 @@
 /**
  * 3D-отрисовка на Three.js.
  *
- * Сцена только читает состояние Game и никогда его не меняет. Между шагами
- * змейки сегменты плавно интерполируются по game.stepProgress.
+ * Сцена только читает состояние (Game, Duel или сетевой снимок) и никогда
+ * его не меняет. Между шагами сегменты плавно интерполируются по stepProgress.
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -17,14 +17,17 @@ export const THEMES = Object.freeze({
   neon: {
     background: 0x070b18, board: 0x10162b, grid: 0x26325e, wall: 0xff2d6f,
     head: 0x3cffa4, tail: 0x1b6dff, apple: 0xff3355, stone: 0x5b6378,
+    rivalHead: 0xffb347, rivalTail: 0xff2d95,
   },
   forest: {
     background: 0x0b140d, board: 0x1b2a1d, grid: 0x30482f, wall: 0xffb703,
     head: 0xb8f36b, tail: 0x2e7d32, apple: 0xe63946, stone: 0x6b705c,
+    rivalHead: 0x8fd3ff, rivalTail: 0x1d4e89,
   },
   sunset: {
     background: 0x170a19, board: 0x261330, grid: 0x4a2552, wall: 0x4cc9f0,
     head: 0xffd166, tail: 0xef476f, apple: 0x06d6a0, stone: 0x6d597a,
+    rivalHead: 0x7ef9ff, rivalTail: 0x7209b7,
   },
 });
 
@@ -89,8 +92,8 @@ export class SceneRenderer {
   }
 
   /** Пересобирает поле, змейку и материалы под размер поля, режим и тему. */
-  setup(game, settings) {
-    const { width, height, mode } = game.opts;
+  setup(view, settings, focusIndex = 0) {
+    const { width, height, mode } = view.opts;
     this.size = { width, height };
     this.theme = THEMES[settings.theme] ?? THEMES.neon;
     this.cameraMode = settings.camera;
@@ -100,11 +103,12 @@ export class SceneRenderer {
 
     this.boardGroup.clear();
     this.buildBoard(width, height, mode === MODES.WALLS);
-    this.buildSnake(width * height);
+    this.buildSnakes(width * height);
     this.clearItems();
     this.stoneKeys = '';
     this.stonesGroup.clear();
-    this.placeCamera(game, true);
+    const focus = view.snakes[focusIndex] ?? view.snakes[0];
+    this.placeCamera(focus.body[0], true);
   }
 
   buildBoard(width, height, deadlyWalls) {
@@ -162,49 +166,14 @@ export class SceneRenderer {
     }
   }
 
-  buildSnake(maxSegments) {
-    if (this.snakeMesh) this.scene.remove(this.snakeMesh, this.head);
-    this.snakeMaterial = new THREE.MeshStandardMaterial({
-      roughness: 0.35, metalness: 0.1, transparent: true,
-    });
-    this.snakeMesh = new THREE.InstancedMesh(
-      new RoundedBoxGeometry(0.86, 0.7, 0.86, 3, 0.22), this.snakeMaterial, maxSegments,
-    );
-    this.snakeMesh.castShadow = true;
-    this.snakeMesh.count = 0;
-    this.scene.add(this.snakeMesh);
-
-    // Перемычки между соседними сегментами — тело выглядит цельным, а не набором кубиков.
-    if (this.jointMesh) this.scene.remove(this.jointMesh);
-    this.jointMesh = new THREE.InstancedMesh(
-      new RoundedBoxGeometry(1, 0.56, 0.62, 2, 0.2), this.snakeMaterial, maxSegments,
-    );
-    this.jointMesh.castShadow = true;
-    this.jointMesh.count = 0;
-    this.scene.add(this.jointMesh);
-
-    this.head = new THREE.Group();
-    const headMesh = new THREE.Mesh(
-      new RoundedBoxGeometry(0.94, 0.8, 0.94, 4, 0.3),
-      new THREE.MeshStandardMaterial({
-        color: this.theme.head, roughness: 0.3, emissive: this.theme.head, emissiveIntensity: 0.12,
-        transparent: true,
-      }),
-    );
-    headMesh.castShadow = true;
-    this.headMaterial = headMesh.material;
-    this.head.add(headMesh);
-    const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
-    const pupil = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), eyeWhite);
-      eye.position.set(0.3, 0.28, side * 0.22);
-      const p = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), pupil);
-      p.position.set(0.12, 0.02, 0);
-      eye.add(p);
-      this.head.add(eye);
-    }
-    this.scene.add(this.head);
+  /** Создаёт меши для двух змеек: одиночная игра использует первую. */
+  buildSnakes(maxSegments) {
+    for (const view of this.snakeViews ?? []) view.dispose(this.scene);
+    const palettes = [
+      { head: this.theme.head, tail: this.theme.tail },
+      { head: this.theme.rivalHead, tail: this.theme.rivalTail },
+    ];
+    this.snakeViews = palettes.map((p) => new SnakeView(this.scene, p, maxSegments));
   }
 
   cellToWorld(x, y) {
@@ -212,9 +181,9 @@ export class SceneRenderer {
   }
 
   /** Плавная позиция сегмента между прошлым и текущим шагом. */
-  segmentPosition(game, i, t) {
-    const cur = game.snake[i];
-    const prev = game.prevSnake[i] ?? cur;
+  segmentPosition(snake, i, t) {
+    const cur = snake.body[i];
+    const prev = snake.prevBody[i] ?? cur;
     const jump = Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y);
     // При проходе сквозь стену не тянем сегмент через всё поле.
     const k = jump > 1 ? 1 : t;
@@ -223,92 +192,53 @@ export class SceneRenderer {
     return { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k };
   }
 
-  render(game) {
+  /**
+   * Рисует кадр. view — это Game, Duel или снимок от хозяина комнаты:
+   * у всех есть opts, snakes, items, obstacles, stepProgress и over.
+   */
+  render(view, focusIndex = 0) {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const time = this.clock.elapsedTime;
-    const t = game.over ? 1 : easeInOut(game.stepProgress);
-    const ghost = game.effects.ghost > 0;
+    const t = view.over ? 1 : easeInOut(view.stepProgress);
 
-    this.drawSnake(game, t, time, ghost);
-    this.syncItems(game, time);
-    this.syncStones(game);
+    const snakes = view.snakes;
+    this.snakeViews.forEach((sv, i) => {
+      const snake = snakes[i];
+      if (!snake) {
+        sv.hide();
+        return;
+      }
+      const points = snake.body.map((_, j) => this.segmentPosition(snake, j, t));
+      sv.draw(snake, points, time);
+    });
+
+    const focus = snakes[focusIndex] ?? snakes[0];
+    const hp = this.segmentPosition(focus, 0, t);
+    this.headLight.position.set(hp.x, 1.6, hp.z);
+    this.headLight.color.set(focusIndex === 1 ? this.theme.rivalHead : this.theme.head);
+
+    this.syncItems(view, time);
+    this.syncStones(view);
     this.updateParticles(dt);
-    this.placeCamera(game, false, dt);
+    this.placeCamera(focus.body[0], false, dt);
     this.composer.render(dt);
   }
 
-  drawSnake(game, t, time, ghost) {
-    const n = game.snake.length;
-    const head = new THREE.Color(this.theme.head);
-    const tail = new THREE.Color(this.theme.tail);
-    const points = [];
-    for (let i = 0; i < n; i += 1) {
-      const p = this.segmentPosition(game, i, t);
-      // Лёгкая «волна» по телу, чтобы змейка выглядела живой.
-      p.y = 0.35 + (i === 0 ? 0 : Math.sin(time * 6 - i * 0.6) * 0.04);
-      p.scale = 1 - (i / n) * 0.25;
-      p.color = tmpColor.copy(head).lerp(tail, i / Math.max(n - 1, 1)).clone();
-      points.push(p);
-    }
-
-    this.snakeMesh.count = Math.max(0, n - 1);
-    for (let i = 1; i < n; i += 1) {
-      const p = points[i];
-      tmpMatrix.makeScale(p.scale, p.scale, p.scale).setPosition(p.x, p.y, p.z);
-      this.snakeMesh.setMatrixAt(i - 1, tmpMatrix);
-      this.snakeMesh.setColorAt(i - 1, p.color);
-    }
-
-    let joints = 0;
-    for (let i = 1; i < n; i += 1) {
-      const a = points[i - 1];
-      const b = points[i];
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const dist = Math.hypot(dx, dz);
-      // На переходе сквозь стену соседние сегменты на разных краях поля — не соединяем.
-      if (dist < 0.05 || dist > 1.5) continue;
-      const s = (a.scale + b.scale) / 2;
-      tmpQuat.setFromAxisAngle(Y_AXIS, Math.atan2(-dz, dx));
-      tmpVec.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-      tmpScale.set(dist, s, s);
-      tmpMatrix.compose(tmpVec, tmpQuat, tmpScale);
-      this.jointMesh.setMatrixAt(joints, tmpMatrix);
-      this.jointMesh.setColorAt(joints, tmpColor.copy(a.color).lerp(b.color, 0.5));
-      joints += 1;
-    }
-    this.jointMesh.count = joints;
-
-    for (const mesh of [this.snakeMesh, this.jointMesh]) {
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
-
-    const opacity = ghost ? 0.4 + Math.sin(time * 12) * 0.15 : 1;
-    this.snakeMaterial.opacity = opacity;
-    this.headMaterial.opacity = opacity;
-
-    const hp = this.segmentPosition(game, 0, t);
-    this.head.position.set(hp.x, 0.4, hp.z);
-    const angle = Math.atan2(-game.direction.y, game.direction.x);
-    this.head.rotation.y = lerpAngle(this.head.rotation.y, angle, 0.35);
-    this.headLight.position.set(hp.x, 1.6, hp.z);
-    this.headLight.color.set(this.theme.head);
-  }
-
-  syncItems(game, time) {
-    const alive = new Set(game.items);
-    for (const [item, mesh] of this.itemMeshes) {
-      if (!alive.has(item)) {
+  syncItems(view, time) {
+    // Ключ по виду и клетке: у гостя предметы каждый кадр приходят новыми объектами.
+    const keyOf = (item) => `${item.kind}:${item.x},${item.y}`;
+    const alive = new Set(view.items.map(keyOf));
+    for (const [key, mesh] of this.itemMeshes) {
+      if (!alive.has(key)) {
         this.itemsGroup.remove(mesh);
-        this.itemMeshes.delete(item);
+        this.itemMeshes.delete(key);
       }
     }
-    for (const item of game.items) {
-      let mesh = this.itemMeshes.get(item);
+    for (const item of view.items) {
+      let mesh = this.itemMeshes.get(keyOf(item));
       if (!mesh) {
         mesh = this.createItemMesh(item.kind);
-        this.itemMeshes.set(item, mesh);
+        this.itemMeshes.set(keyOf(item), mesh);
         this.itemsGroup.add(mesh);
         mesh.userData.born = time;
       }
@@ -377,13 +307,13 @@ export class SceneRenderer {
     this.itemMeshes.clear();
   }
 
-  syncStones(game) {
-    const keys = game.obstacles.map((o) => `${o.x},${o.y}`).join('|');
+  syncStones(view) {
+    const keys = view.obstacles.map((o) => `${o.x},${o.y}`).join('|');
     if (keys === this.stoneKeys) return;
     this.stoneKeys = keys;
     this.stonesGroup.clear();
     const mat = new THREE.MeshStandardMaterial({ color: this.theme.stone, roughness: 0.95, flatShading: true });
-    for (const o of game.obstacles) {
+    for (const o of view.obstacles) {
       const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 0), mat);
       const p = this.cellToWorld(o.x, o.y);
       stone.position.set(p.x, 0.38, p.z);
@@ -451,7 +381,7 @@ export class SceneRenderer {
     this.shake = strength;
   }
 
-  placeCamera(game, instant, dt = 0.016) {
+  placeCamera(headCell, instant, dt = 0.016) {
     const { width, height } = this.size;
     // Расстояние, при котором поле целиком помещается в кадр с отступом.
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
@@ -466,7 +396,7 @@ export class SceneRenderer {
       this.cameraTarget.set(0, distance * 1.02, distance * 0.62 + lookShift);
     }
     // Камера слегка следует за головой.
-    const hp = this.cellToWorld(game.head.x, game.head.y);
+    const hp = this.cellToWorld(headCell.x, headCell.y);
     tmpVec.set(hp.x * 0.08, 0, hp.z * 0.08 + lookShift);
     const k = instant ? 1 : 1 - Math.exp(-dt * 3);
     this.camera.position.lerp(this.cameraTarget.clone().add(tmpVec), k);
@@ -489,6 +419,111 @@ export class SceneRenderer {
     // На узком экране отодвигаем камеру, чтобы поле влезало целиком.
     this.camera.fov = w / h < 1 ? 62 : 45;
     this.camera.updateProjectionMatrix();
+  }
+}
+
+/** Меши одной змейки: тело, перемычки между сегментами и голова с глазами. */
+class SnakeView {
+  constructor(scene, palette, maxSegments) {
+    this.palette = { head: new THREE.Color(palette.head), tail: new THREE.Color(palette.tail) };
+    this.material = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1, transparent: true });
+    this.body = new THREE.InstancedMesh(
+      new RoundedBoxGeometry(0.86, 0.7, 0.86, 3, 0.22), this.material, maxSegments,
+    );
+    // Перемычки делают тело цельным, а не набором кубиков.
+    this.joints = new THREE.InstancedMesh(
+      new RoundedBoxGeometry(1, 0.56, 0.62, 2, 0.2), this.material, maxSegments,
+    );
+    for (const mesh of [this.body, this.joints]) {
+      mesh.castShadow = true;
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+    }
+
+    this.head = new THREE.Group();
+    this.headMaterial = new THREE.MeshStandardMaterial({
+      color: palette.head, roughness: 0.3, emissive: palette.head, emissiveIntensity: 0.12, transparent: true,
+    });
+    const headMesh = new THREE.Mesh(new RoundedBoxGeometry(0.94, 0.8, 0.94, 4, 0.3), this.headMaterial);
+    headMesh.castShadow = true;
+    this.head.add(headMesh);
+    const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+    const pupil = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), eyeWhite);
+      eye.position.set(0.3, 0.28, side * 0.22);
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), pupil);
+      p.position.set(0.12, 0.02, 0);
+      eye.add(p);
+      this.head.add(eye);
+    }
+    scene.add(this.body, this.joints, this.head);
+  }
+
+  hide() {
+    this.body.count = 0;
+    this.joints.count = 0;
+    this.head.visible = false;
+  }
+
+  dispose(scene) {
+    scene.remove(this.body, this.joints, this.head);
+  }
+
+  draw(snake, points, time) {
+    const n = points.length;
+    points.forEach((p, i) => {
+      // Лёгкая «волна» по телу, чтобы змейка выглядела живой.
+      p.y = 0.35 + (i === 0 ? 0 : Math.sin(time * 6 - i * 0.6) * 0.04);
+      p.scale = 1 - (i / n) * 0.25;
+      p.color = new THREE.Color().copy(this.palette.head).lerp(this.palette.tail, i / Math.max(n - 1, 1));
+    });
+
+    this.body.count = Math.max(0, n - 1);
+    for (let i = 1; i < n; i += 1) {
+      const p = points[i];
+      tmpMatrix.makeScale(p.scale, p.scale, p.scale).setPosition(p.x, p.y, p.z);
+      this.body.setMatrixAt(i - 1, tmpMatrix);
+      this.body.setColorAt(i - 1, p.color);
+    }
+
+    let joints = 0;
+    for (let i = 1; i < n; i += 1) {
+      const a = points[i - 1];
+      const b = points[i];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const dist = Math.hypot(dx, dz);
+      // На переходе сквозь стену соседние сегменты на разных краях поля — не соединяем.
+      if (dist < 0.05 || dist > 1.5) continue;
+      const s = (a.scale + b.scale) / 2;
+      tmpQuat.setFromAxisAngle(Y_AXIS, Math.atan2(-dz, dx));
+      tmpVec.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+      tmpScale.set(dist, s, s);
+      tmpMatrix.compose(tmpVec, tmpQuat, tmpScale);
+      this.joints.setMatrixAt(joints, tmpMatrix);
+      this.joints.setColorAt(joints, tmpColor.copy(a.color).lerp(b.color, 0.5));
+      joints += 1;
+    }
+    this.joints.count = joints;
+
+    for (const mesh of [this.body, this.joints]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+
+    // «Призрак» мерцает, погибшая в дуэли змейка тускнеет.
+    let opacity = 1;
+    if (snake.ghost) opacity = 0.4 + Math.sin(time * 12) * 0.15;
+    else if (!snake.alive) opacity = 0.35;
+    this.material.opacity = opacity;
+    this.headMaterial.opacity = opacity;
+
+    const hp = points[0];
+    this.head.visible = true;
+    this.head.position.set(hp.x, 0.4, hp.z);
+    const angle = Math.atan2(-snake.direction.y, snake.direction.x);
+    this.head.rotation.y = lerpAngle(this.head.rotation.y, angle, 0.35);
   }
 }
 

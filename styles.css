@@ -318,6 +318,63 @@ input:not([type]), input[type="text"] {
 
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 
+/* ---------- Вдвоём ---------- */
+.duo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius);
+}
+
+.duo-title {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stack { display: flex; flex-direction: column; gap: 10px; }
+
+#room-link { font-size: 13px; }
+
+.room-code { margin: 0; color: var(--muted); }
+.room-code b { color: var(--text); font: 800 20px Unbounded, sans-serif; letter-spacing: 0.15em; }
+
+.status { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: 600; }
+.status.error { color: var(--danger); }
+
+.you { color: var(--accent); }
+.rival { color: #ffb347; }
+
+.hud-duel {
+  display: flex;
+  gap: 16px;
+  padding: 8px 14px;
+  font: 600 15px Inter, sans-serif;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+.hud-duel b { font: 800 20px Unbounded, sans-serif; font-variant-numeric: tabular-nums; }
+
+.duel-stat { display: none; }
+body.duel .duel-stat { display: flex; }
+body.duel .solo-stat { display: none; }
+
+.duel-score {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 12px;
+  margin: 4px 0 8px;
+  font: 800 22px Unbounded, sans-serif;
+}
+
+.duel-score i { color: var(--muted); font-style: normal; }
+
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 @keyframes toast {
