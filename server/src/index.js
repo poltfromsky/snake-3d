@@ -54,12 +54,14 @@ async function readJson(request) {
 }
 
 /**
- * Отпечаток клиента для защиты от спама: хэш IP с солью.
- * Сам IP в базе не хранится.
+ * Отпечаток клиента для защиты от спама: хэш IP с секретной солью.
+ * Сам IP в базе не хранится. Соль — только секрет (`wrangler secret put IP_SALT`,
+ * локально — server/.dev.vars): с известной солью хэш IPv4 перебирается обратно.
  */
 async function clientHash(request, env) {
+  if (!env.IP_SALT || env.IP_SALT.length < 16) throw new Error('IP_SALT secret is not configured');
   const ip = request.headers.get('CF-Connecting-IP') ?? 'local';
-  const data = new TextEncoder().encode(`${env.IP_SALT ?? 'izgib-pitona'}:${ip}`);
+  const data = new TextEncoder().encode(`${env.IP_SALT}:${ip}`);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
@@ -143,13 +145,16 @@ export default {
     }
 
     try {
+      // `return await`, а не `return`: иначе ошибка из обработчика пролетит мимо catch
+      // и Cloudflare отдаст свою страницу ошибки вместо короткого JSON.
       if (url.pathname === '/api/health') return json({ ok: true }, 200, request, env);
-      if (url.pathname === '/api/rooms' && request.method === 'POST') return createRoom(request, env);
-      if (url.pathname === '/api/records' && request.method === 'GET') return topRecords(request, env, url);
-      if (url.pathname === '/api/records' && request.method === 'POST') return addRecord(request, env);
-      if (url.pathname === '/api/feedback' && request.method === 'POST') return addFeedback(request, env);
+      if (url.pathname === '/api/rooms' && request.method === 'POST') return await createRoom(request, env);
+      if (url.pathname === '/api/records' && request.method === 'GET') return await topRecords(request, env, url);
+      if (url.pathname === '/api/records' && request.method === 'POST') return await addRecord(request, env);
+      if (url.pathname === '/api/feedback' && request.method === 'POST') return await addFeedback(request, env);
     } catch (err) {
-      console.error(err);
+      // В лог — только текст ошибки, без запроса и заголовков (там IP игрока).
+      console.error(err?.message ?? 'unknown error');
       return json({ error: 'Ошибка сервера.' }, 500, request, env);
     }
     return json({ error: 'not found' }, 404, request, env);

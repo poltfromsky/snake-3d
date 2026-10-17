@@ -1,0 +1,5 @@
+# Пример локальных секретов для `npm run dev`. Скопируйте в .dev.vars (он в .gitignore)
+# и подставьте своё случайное значение, например вывод:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# В облаке тот же секрет задаётся командой: npx wrangler secret put IP_SALT
+IP_SALT=

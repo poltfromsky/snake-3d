@@ -35,11 +35,10 @@ jobs:
       - name: Таблицы в локальной базе
         run: npm run db:local
       - name: Запуск сервера
+        # Соль — случайная на каждый прогон; лог сервера в публичный CI не выводим.
         run: |
-          npx wrangler dev --port 8787 --ip 127.0.0.1 > wrangler.log 2>&1 &
+          echo "IP_SALT=$(openssl rand -hex 32)" > .dev.vars
+          npx wrangler dev --port 8787 --ip 127.0.0.1 > /dev/null 2>&1 &
           curl -sf --retry 60 --retry-connrefused --retry-delay 1 http://127.0.0.1:8787/api/health
       - name: Сквозной тест онлайн-комнаты
         run: npm run test:e2e
-      - name: Лог сервера при ошибке
-        if: failure()
-        run: cat wrangler.log
