@@ -4,6 +4,12 @@
  * Держит WebSocket-подключения двух игроков, гоняет игровой цикл и передаёт
  * всё в RoomSession (src/core/room.js), где живут правила. Здесь — только
  * «провода»: подключения, таймер и защита от флуда.
+ *
+ * Диагностика (временно, пока разбираемся с циклом в проде):
+ *   - console.log/error пишут в Cloudflare Workers Logs события жизненного цикла
+ *     и ошибки — без IP, заголовков и содержимого сообщений;
+ *   - клиент может прислать {t:'debug'}, и сервер раз в секунду будет слать ему
+ *     {t:'diag', ...} с состоянием цикла. Игре это не мешает.
  */
 import { DurableObject } from 'cloudflare:workers';
 
@@ -12,6 +18,7 @@ import { ROOM_TTL_MS, RoomSession } from '../../src/core/room.js';
 const TICK_MS = 20; // частота игрового цикла на сервере
 const MAX_MESSAGES_PER_SECOND = 40;
 const MAX_MESSAGE_BYTES = 512;
+const DIAG_EVERY_MS = 1000;
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -21,6 +28,23 @@ export class Room extends DurableObject {
     this.loop = null;
     this.lastTick = 0;
     this.createdAt = 0;
+    this.roomTag = ctx.id.toString().slice(0, 8);
+    this.debugIds = new Set();
+    this.resetDiag();
+    this.log('construct');
+  }
+
+  resetDiag() {
+    this.diag = {
+      ticks: 0, maxGap: 0, zeroDt: 0, errors: 0, lastDiagAt: 0, loopStarts: 0,
+    };
+  }
+
+  /** Одна строка JSON в логах — удобно фильтровать в Cloudflare Workers Logs. */
+  log(event, extra = {}) {
+    console.log(JSON.stringify({
+      room: this.roomTag, event, phase: this.session?.phase ?? null, players: this.sockets?.size ?? 0, ...extra,
+    }));
   }
 
   async fetch(request) {
@@ -40,6 +64,7 @@ export class Room extends DurableObject {
     if (!saved) return;
     this.session = new RoomSession({ mode: saved.mode, speed: saved.speed });
     this.createdAt = saved.createdAt;
+    this.log('restore');
   }
 
   /** Создание комнаты. 409 — код занят комнатой, созданной меньше часа назад. */
@@ -52,6 +77,7 @@ export class Room extends DurableObject {
     this.session = new RoomSession({ mode, speed });
     this.createdAt = Date.now();
     await this.ctx.storage.put('room', { mode: this.session.mode, speed, createdAt: this.createdAt });
+    this.log('init', { mode: this.session.mode });
     return new Response('ok');
   }
 
@@ -64,6 +90,7 @@ export class Room extends DurableObject {
     if (expired) {
       this.sendTo(server, { t: 'error', text: 'Комната не найдена или устарела. Попросите друга создать новую.' });
       server.close(4404, 'room not found');
+      this.log('connect-rejected', { reason: 'not-found' });
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -72,55 +99,103 @@ export class Room extends DurableObject {
     if (slot === -1) {
       for (const m of messages) this.sendTo(server, m.msg);
       server.close(4409, 'room full');
+      this.log('connect-rejected', { reason: 'full' });
       return new Response(null, { status: 101, webSocket: client });
     }
     this.sockets.set(id, server);
+    this.log('connect', { slot });
 
     let windowStart = Date.now();
     let count = 0;
     server.addEventListener('message', (event) => {
-      // Простая защита от флуда: не больше N сообщений в секунду.
-      const now = Date.now();
-      if (now - windowStart > 1000) { windowStart = now; count = 0; }
-      count += 1;
-      if (count > MAX_MESSAGES_PER_SECOND) return;
-      if (typeof event.data !== 'string' || event.data.length > MAX_MESSAGE_BYTES) return;
-      let msg;
-      try { msg = JSON.parse(event.data); } catch { return; }
-      this.dispatch(this.session.handle(id, msg));
-      this.ensureLoop();
+      try {
+        // Простая защита от флуда: не больше N сообщений в секунду.
+        const now = Date.now();
+        if (now - windowStart > 1000) { windowStart = now; count = 0; }
+        count += 1;
+        if (count > MAX_MESSAGES_PER_SECOND) return;
+        if (typeof event.data !== 'string' || event.data.length > MAX_MESSAGE_BYTES) return;
+        let msg;
+        try { msg = JSON.parse(event.data); } catch { return; }
+        if (msg?.t === 'debug') {
+          this.debugIds.add(id);
+          this.log('debug-on', { slot });
+          return;
+        }
+        this.dispatch(this.session.handle(id, msg));
+        this.ensureLoop('message');
+      } catch (err) {
+        this.diag.errors += 1;
+        console.error(JSON.stringify({ room: this.roomTag, event: 'message-error', error: err?.message, stack: String(err?.stack ?? '').slice(0, 600) }));
+      }
     });
-    const onGone = () => {
+    const onGone = (event) => {
       if (!this.sockets.has(id)) return;
       this.sockets.delete(id);
+      this.debugIds.delete(id);
+      this.log('disconnect', { slot, code: event?.code ?? null });
       this.dispatch(this.session.leave(id));
-      this.ensureLoop();
+      this.ensureLoop('leave');
     };
     server.addEventListener('close', onGone);
     server.addEventListener('error', onGone);
 
     this.dispatch(messages, server);
-    this.ensureLoop();
+    this.ensureLoop('connect');
     return new Response(null, { status: 101, webSocket: client });
   }
 
   /** Цикл крутится только пока идёт отсчёт или партия — иначе не тратим ресурсы. */
-  ensureLoop() {
+  ensureLoop(reason) {
     if (this.session?.active && !this.loop) {
       this.lastTick = Date.now();
+      this.diag.loopStarts += 1;
       this.loop = setInterval(() => this.tick(), TICK_MS);
+      this.log('loop-start', { reason });
     } else if (!this.session?.active && this.loop) {
       clearInterval(this.loop);
       this.loop = null;
+      this.log('loop-stop', { reason, ticks: this.diag.ticks, maxGap: this.diag.maxGap });
     }
   }
 
   tick() {
     const now = Date.now();
-    const dt = Math.min(now - this.lastTick, 250);
+    const gap = now - this.lastTick;
+    const dt = Math.min(gap, 250);
     this.lastTick = now;
-    this.dispatch(this.session.tick(dt));
-    this.ensureLoop();
+    this.diag.ticks += 1;
+    if (gap > this.diag.maxGap) this.diag.maxGap = gap;
+    if (dt === 0) this.diag.zeroDt += 1;
+    try {
+      this.dispatch(this.session.tick(dt));
+    } catch (err) {
+      this.diag.errors += 1;
+      console.error(JSON.stringify({ room: this.roomTag, event: 'tick-error', error: err?.message, stack: String(err?.stack ?? '').slice(0, 600) }));
+    }
+    if (this.debugIds.size && now - this.diag.lastDiagAt >= DIAG_EVERY_MS) {
+      this.diag.lastDiagAt = now;
+      this.sendDiag(now);
+    }
+    this.ensureLoop('tick');
+  }
+
+  sendDiag(now) {
+    const msg = {
+      t: 'diag',
+      now,
+      phase: this.session?.phase,
+      step: this.session?.duel?.stepCount ?? null,
+      ticks: this.diag.ticks,
+      maxGap: this.diag.maxGap,
+      zeroDt: this.diag.zeroDt,
+      errors: this.diag.errors,
+      loopStarts: this.diag.loopStarts,
+    };
+    for (const id of this.debugIds) {
+      const socket = this.sockets.get(id);
+      if (socket) this.sendTo(socket, msg);
+    }
   }
 
   dispatch(messages, selfSocket = null) {
@@ -138,8 +213,10 @@ export class Room extends DurableObject {
   sendTo(socket, msg) {
     try {
       socket.send(JSON.stringify(msg));
-    } catch {
-      // Сокет уже закрыт — его уберёт обработчик close.
+    } catch (err) {
+      // Сокет уже закрыт — его уберёт обработчик close. Но фиксируем: вдруг дело в этом.
+      this.diag.errors += 1;
+      console.error(JSON.stringify({ room: this.roomTag, event: 'send-error', error: err?.message }));
     }
   }
 }
