@@ -3,7 +3,7 @@
  */
 import { DIRECTIONS, Game, MODES } from './core/game.js';
 import { SceneRenderer } from './render/scene.js';
-import { AudioManager } from './audio/audio.js';
+import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
 import {
   addRecord, isRecord, loadRecords, loadSettings, saveSettings, SPEED_FACTORS,
 } from './storage.js';
@@ -349,11 +349,14 @@ $('#set-sfx').addEventListener('change', () => audio.play('eat'));
 
 /* ---------------- Старт ---------------- */
 
+/** Атрибуция по требованию CC BY 4.0: название, автор, источник, лицензия. */
 function renderCredits() {
-  const track = audio.currentTrack;
-  $('#music-credits').innerHTML = track
-    ? `Музыка: «${track.title}» — ${track.author}. ${track.license}`
-    : '';
+  if (!MUSIC_TRACKS.length) return;
+  const titles = MUSIC_TRACKS.map((t) => `«${t.title}»`).join(', ');
+  const authors = [...new Set(MUSIC_TRACKS.map((t) => t.author))].join(', ');
+  $('#music-credits').innerHTML = `Музыка: ${titles} — ${authors} `
+    + '(<a href="https://incompetech.com" target="_blank" rel="noopener">incompetech.com</a>), '
+    + `<a href="${MUSIC_LICENSE.url}" target="_blank" rel="noopener">${MUSIC_LICENSE.name}</a>`;
 }
 
 markActive($('#mode-select'), 'mode', settings.mode);

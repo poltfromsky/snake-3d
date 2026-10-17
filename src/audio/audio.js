@@ -6,9 +6,14 @@
  * если файла нет, игра работает без неё.
  */
 
+export const MUSIC_LICENSE = Object.freeze({
+  name: 'CC BY 4.0',
+  url: 'https://creativecommons.org/licenses/by/4.0/',
+});
+
 export const MUSIC_TRACKS = [
-  // Заполняется после загрузки трека с открытой лицензией.
-  // { src: 'assets/music/<file>.mp3', title: '...', author: '...' },
+  { src: 'assets/music/pixelland.mp3', title: 'Pixelland', author: 'Kevin MacLeod' },
+  { src: 'assets/music/itty_bitty_8_bit.mp3', title: 'Itty Bitty 8 Bit', author: 'Kevin MacLeod' },
 ];
 
 export class AudioManager {
