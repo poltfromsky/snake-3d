@@ -134,6 +134,22 @@ export class AudioManager {
           freq: f, duration: 0.12, delay: i * 0.09, type: 'square', gain: 0.16,
         }));
         break;
+      case 'achievement':
+        // Мягкий «дзынь» из двух нот с обертоном — в духе всплывашки Steam.
+        this.tone({ freq: 1046, duration: 0.35, type: 'sine', gain: 0.22 });
+        this.tone({ freq: 2093, duration: 0.25, type: 'sine', gain: 0.06 });
+        this.tone({ freq: 1568, duration: 0.6, delay: 0.12, type: 'sine', gain: 0.2 });
+        this.tone({ freq: 3136, duration: 0.4, delay: 0.12, type: 'triangle', gain: 0.04 });
+        break;
+      case 'achievementLegendary':
+        // Торжественное арпеджио и долгий перелив для «Бога змейки» и «Уробороса».
+        [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone({
+          freq: f, duration: 0.5, delay: i * 0.08, type: 'triangle', gain: 0.16,
+        }));
+        [2093, 2637, 3136].forEach((f, i) => this.tone({
+          freq: f, duration: 0.9, delay: 0.45 + i * 0.06, type: 'sine', gain: 0.05,
+        }));
+        break;
       default:
         break;
     }

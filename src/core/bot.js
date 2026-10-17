@@ -359,7 +359,8 @@ export class HungerTracker {
   update(duel) {
     duel.players.forEach((p, i) => {
       const len = p.body.length + p.growth;
-      this.hunger[i] = this.lengths[i] != null && len > this.lengths[i] ? 0 : this.hunger[i] + 1;
+      if (this.lengths[i] == null || len > this.lengths[i]) this.hunger[i] = 0; // начало или съел
+      else this.hunger[i] += 1;
       this.lengths[i] = len;
     });
     return this.hunger;

@@ -4,10 +4,15 @@
  * Виды партий (kind):
  *   solo   — одиночная игра (Game);
  *   local  — двое за одной клавиатурой (Duel);
- *   online — партия на сервере (server/): рисуем его снимки, шлём свои повороты.
+ *   online — партия на сервере (server/): рисуем его снимки, шлём свои повороты;
+ *   bot    — дуэль против бота (Duel, бот думает в отдельном потоке).
  */
 import { DIRECTIONS, Game, MODES } from './core/game.js';
 import { Duel } from './core/duel.js';
+import { BOT_LEVELS } from './core/bot.js';
+import { BotPlayer } from './bot-player.js';
+import { AchievementBook } from './achievements.js';
+import { AchievementToasts } from './ui/achievement-toast.js';
 import { SceneRenderer, THEMES } from './render/scene.js';
 import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
 import {
@@ -50,6 +55,11 @@ const audio = new AudioManager();
 audio.setVolumes(settings);
 const renderer = new SceneRenderer($('#scene'));
 const leaderboard = new Leaderboard(API_BASE);
+const achievements = new AchievementBook();
+const achievementToasts = new AchievementToasts(
+  $('#achievement-toasts'),
+  (rarity) => audio.play(rarity === 'legendary' ? 'achievementLegendary' : 'achievement'),
+);
 
 let kind = 'solo';
 let game = createGame();
@@ -63,6 +73,10 @@ let leaving = false;
 let remote = null; // { snap, receivedAt } — последний снимок от сервера
 let remoteNeedsSetup = false;
 let mySlot = 0;
+
+// Против бота
+let bot = null;
+let botLevel = null;
 // Во время партии сервер шлёт снимок минимум раз в полсекунды. Если данных нет
 // дольше, связь оборвалась где-то в сети (так бывает без VPN) — честно говорим об этом.
 const STALL_MS = 3000;
@@ -118,7 +132,7 @@ function setupScene(view = currentView()) {
 
 /* ---------------- Экраны ---------------- */
 
-const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback'];
+const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements'];
 
 function show(name) {
   for (const s of screens) $(`#screen-${s}`).classList.toggle('hidden', s !== name);
@@ -139,7 +153,13 @@ function beginPlaying() {
   updateHud();
 }
 
+function stopBot() {
+  bot?.dispose();
+  bot = null;
+}
+
 function startSolo() {
+  stopBot();
   kind = 'solo';
   game = createGame();
   setupScene();
@@ -147,11 +167,24 @@ function startSolo() {
 }
 
 function startLocalDuel() {
+  stopBot();
   kind = 'local';
   game = createDuel();
   setupScene();
   beginPlaying();
   toast('WASD против стрелок!');
+}
+
+function startBotDuel(levelId) {
+  if (!BOT_LEVELS[levelId]) return;
+  stopBot();
+  kind = 'bot';
+  botLevel = levelId;
+  game = createDuel();
+  bot = new BotPlayer(levelId, 1);
+  setupScene();
+  beginPlaying();
+  toast(`Вы против: ${BOT_LEVELS[levelId].name}`);
 }
 
 function pause() {
@@ -169,6 +202,7 @@ function resume() {
 
 function toMenu() {
   leaveRoom();
+  stopBot();
   kind = 'solo';
   state = 'menu';
   audio.pauseMusic();
@@ -207,6 +241,7 @@ function gameOver(reason) {
 
 function playerName(index) {
   if (kind === 'local') return `Игрок ${index + 1}`;
+  if (kind === 'bot') return index === 0 ? 'Вы' : BOT_LEVELS[botLevel].name;
   return index === myIndex() ? 'Вы' : 'Друг';
 }
 
@@ -233,6 +268,15 @@ function duelOver({ winner, reason }, scores, deathReasons) {
   $('#duel-s1').textContent = `${scores[1]} ${playerName(1)}`;
   $('#duel-status').textContent = '';
   setTimeout(() => { if (state === 'over') show('duel'); }, 900);
+
+  // Победа над ботом — достижения (каждое только в первый раз).
+  if (kind === 'bot' && winner === me) {
+    const fresh = achievements.recordBotWin(botLevel);
+    if (fresh.length) {
+      setTimeout(() => fresh.forEach((a) => achievementToasts.show(a)), 1100);
+      renderBotButtons();
+    }
+  }
 }
 
 /* ---------------- HUD ---------------- */
@@ -317,6 +361,8 @@ function frame(now) {
   if (state === 'playing' && kind !== 'online') {
     const events = game.update(dt);
     handleEvents(events);
+    // Бот думает над следующим ходом сразу после каждого шага змеек.
+    if (kind === 'bot' && bot && state === 'playing') bot.update(game);
     const { baseTicksPerSecond, maxTicksPerSecond } = game.opts;
     audio.setIntensity((game.ticksPerSecond - baseTicksPerSecond) / (maxTicksPerSecond - baseTicksPerSecond));
   }
@@ -482,6 +528,10 @@ function voteRematch() {
     startLocalDuel();
     return;
   }
+  if (kind === 'bot') {
+    startBotDuel(botLevel);
+    return;
+  }
   conn?.send({ t: 'rematch' });
 }
 
@@ -491,6 +541,7 @@ function steer(index, dirName) {
   if (state !== 'playing') return;
   if (kind === 'solo') game.turn(DIRECTIONS[dirName]);
   else if (kind === 'local') game.turn(index, DIRECTIONS[dirName]);
+  else if (kind === 'bot') game.turn(0, DIRECTIONS[dirName]);
   else if (kind === 'online') conn?.send({ t: 'turn', dir: dirName });
 }
 
@@ -549,6 +600,12 @@ document.addEventListener('click', async (e) => {
   switch (action) {
     case 'play': startSolo(); break;
     case 'local': startLocalDuel(); break;
+    case 'bot': startBotDuel(e.target.closest('[data-level]')?.dataset.level); break;
+    case 'achievements':
+      previousScreen = 'menu';
+      renderAchievements();
+      show('achievements');
+      break;
     case 'online': openOnlineScreen(); break;
     case 'create-room': createRoomFlow(); break;
     case 'copy-link':
@@ -810,6 +867,41 @@ function renderCredits() {
     + `<a href="${MUSIC_LICENSE.url}" target="_blank" rel="noopener">${MUSIC_LICENSE.name}</a>`;
 }
 
+/* ---------------- Достижения ---------------- */
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function renderAchievements() {
+  const list = achievements.list();
+  const open = list.filter((a) => a.unlockedAt).length;
+  $('#achievements-progress').textContent = `Открыто ${open} из ${list.length}`;
+  const ul = $('#achievements-list');
+  ul.replaceChildren();
+  for (const a of list) {
+    const li = document.createElement('li');
+    li.className = `${a.rarity}${a.unlockedAt ? '' : ' locked'}`;
+    const icon = document.createElement('div');
+    icon.className = 'achievement-icon';
+    icon.textContent = a.unlockedAt ? a.icon : '🔒';
+    const title = document.createElement('b');
+    title.textContent = a.title;
+    const desc = document.createElement('span');
+    desc.textContent = a.unlockedAt ? `${a.description} · ${formatDate(a.unlockedAt)}` : a.description;
+    li.append(icon, title, desc);
+    ul.append(li);
+  }
+}
+
+/** Кубок на кнопках ботов, которых игрок уже победил. */
+function renderBotButtons() {
+  for (const b of document.querySelectorAll('.bot-btn')) {
+    b.classList.toggle('beaten', achievements.has(`beat-${b.dataset.level}`));
+  }
+}
+
+renderBotButtons();
 markActive($('#mode-select'), 'mode', settings.mode);
 // Общая таблица и отзывы появляются, только когда подключена база.
 for (const el of document.querySelectorAll('.online-only')) {

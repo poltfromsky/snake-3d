@@ -32,6 +32,7 @@
     <button id="btn-pause" class="icon-btn" aria-label="Пауза">❚❚</button>
   </header>
   <div id="toast" class="toast" aria-live="polite"></div>
+  <div id="achievement-toasts" class="achievement-toasts" aria-live="polite"></div>
 
   <!-- Главное меню -->
   <section id="screen-menu" class="screen">
@@ -51,8 +52,18 @@
           <button class="btn" data-action="local">Одна клавиатура</button>
         </div>
       </div>
+      <div class="duo bots">
+        <span class="duo-title">Против бота</span>
+        <div class="bot-grid">
+          <button class="btn bot-btn" data-action="bot" data-level="easy"><b>Ужик</b><small>лёгкий</small></button>
+          <button class="btn bot-btn" data-action="bot" data-level="medium"><b>Гадюка</b><small>средний</small></button>
+          <button class="btn bot-btn" data-action="bot" data-level="hard"><b>Анаконда</b><small>сложный</small></button>
+          <button class="btn bot-btn legendary" data-action="bot" data-level="claude"><b>Claude</b><small>сильнейший</small></button>
+        </div>
+      </div>
       <div class="row">
         <button class="btn" data-action="records">Рекорды</button>
+        <button class="btn" data-action="achievements">Достижения</button>
         <button class="btn" data-action="settings">Настройки</button>
       </div>
       <button class="btn link-btn online-only hidden" data-action="feedback">💬 Оставить отзыв об игре</button>
@@ -154,6 +165,16 @@
       <button class="btn primary" data-action="rematch">Реванш</button>
       <p id="duel-status" class="status" aria-live="polite"></p>
       <button class="btn" data-action="leave">В меню</button>
+    </div>
+  </section>
+
+  <!-- Достижения -->
+  <section id="screen-achievements" class="screen hidden">
+    <div class="panel">
+      <h2>Достижения</h2>
+      <p id="achievements-progress" class="subtitle"></p>
+      <ul id="achievements-list" class="achievements"></ul>
+      <button class="btn" data-action="back">Назад</button>
     </div>
   </section>
 
