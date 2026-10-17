@@ -91,7 +91,9 @@ jobs:
           echo "api_url=$url" >> "$GITHUB_OUTPUT"
           echo "Сервер: $url"
       - name: Проверка, что сервер жив
-        run: curl -sf --retry 10 --retry-delay 3 "${{ steps.deploy.outputs.api_url }}/api/health"
+        # Новый адрес *.workers.dev Cloudflare включает 1–3 минуты — ждём до ~3 минут,
+        # повторяя и при ошибках вроде 404/522, а не только при обрыве соединения.
+        run: curl -sf --retry 36 --retry-delay 5 --retry-all-errors --max-time 10 "${{ steps.deploy.outputs.api_url }}/api/health"
 
   deploy-site:
     needs: deploy-server
