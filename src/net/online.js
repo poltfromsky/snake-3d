@@ -31,7 +31,7 @@ export async function createRoom(apiBase, { mode, speed }) {
       body: JSON.stringify({ mode, speed }),
     });
   } catch {
-    throw new Error('Сервер игры недоступен. Проверьте интернет.');
+    throw new Error('Сервер игры недоступен. Для онлайн-игры включите VPN.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.code) throw new Error(data.error ?? 'Не удалось создать комнату.');
@@ -61,7 +61,7 @@ export class RoomConnection {
         reject(new Error(text));
       };
       const timer = setTimeout(() => {
-        fail('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
+        fail('Сервер не отвечает. Для онлайн-игры включите VPN.');
         this.close();
       }, CONNECT_TIMEOUT_MS);
 
@@ -85,7 +85,7 @@ export class RoomConnection {
       this.socket.addEventListener('close', () => {
         clearTimeout(timer);
         clearInterval(this.ping);
-        fail('Не удалось подключиться к комнате.');
+        fail('Не удалось подключиться к комнате. Для онлайн-игры включите VPN.');
         if (!this.closedByUs) this.handlers.onClose?.();
       });
       // Пинг не даёт промежуточным прокси закрыть «молчащее» соединение.

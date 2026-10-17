@@ -63,6 +63,10 @@ let leaving = false;
 let remote = null; // { snap, receivedAt } — последний снимок от сервера
 let remoteNeedsSetup = false;
 let mySlot = 0;
+// Во время партии сервер шлёт снимок минимум раз в полсекунды. Если данных нет
+// дольше, связь оборвалась где-то в сети (так бывает без VPN) — честно говорим об этом.
+const STALL_MS = 3000;
+const VPN_HINT = 'Для онлайн-игры включите VPN.';
 
 function createGame() {
   const narrow = window.innerWidth < window.innerHeight;
@@ -305,6 +309,11 @@ function frame(now) {
   const dt = Math.min(now - lastTime, 250);
   lastTime = now;
 
+  if (kind === 'online' && state === 'playing' && remote && !remote.snap.over
+    && now - remote.receivedAt > STALL_MS) {
+    connectionLost();
+  }
+
   if (state === 'playing' && kind !== 'online') {
     const events = game.update(dt);
     handleEvents(events);
@@ -353,8 +362,7 @@ async function connectToRoom(code) {
     onMessage: handleNetMessage,
     onClose: () => {
       if (leaving || conn !== connection) return;
-      toast('Связь с сервером потеряна');
-      toMenu();
+      connectionLost();
     },
   });
   conn = connection;
@@ -400,6 +408,18 @@ async function joinRoom(rawCode) {
   } finally {
     setBusy('#join-form button[type=submit]', false, '', 'Войти');
   }
+}
+
+/** Связь с сервером пропала: выходим из комнаты и объясняем, что делать. */
+function connectionLost() {
+  if (kind !== 'online') return;
+  leaveRoom();
+  state = 'lobby';
+  $('#online-start').classList.remove('hidden');
+  $('#online-room').classList.add('hidden');
+  show('online');
+  setOnlineStatus(`Связь с сервером прервалась. ${VPN_HINT}`, true);
+  audio.pauseMusic();
 }
 
 function leaveRoom() {

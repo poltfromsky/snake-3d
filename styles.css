@@ -342,6 +342,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .room-code { margin: 0; color: var(--muted); }
 .room-code b { color: var(--text); font: 800 20px Unbounded, sans-serif; letter-spacing: 0.15em; }
 
+.vpn-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 12px;
+}
+
 .status { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: 600; }
 .status.error { color: var(--danger); }
 
