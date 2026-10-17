@@ -150,7 +150,10 @@ test('отзыв уходит на сервер и игрок видит отв�
   }));
   await page.locator('[data-action="feedback"]').click();
   await page.locator('#feedback-rating [data-value="5"]').click();
-  await page.locator('#feedback-message').fill('Автотест: отзыв доходит до сервера');
+  // Печатаем с клавиатуры, а не fill(): пробел в тексте не должен запускать игру.
+  await page.locator('#feedback-message').pressSequentially('Автотест: отзыв доходит до сервера');
+  await expect(page.locator('#feedback-message')).toHaveValue('Автотест: отзыв доходит до сервера');
+  expect(await gameState(page)).toBe('menu');
   await page.locator('#feedback-form button[type="submit"]').click();
   await expect(page.locator('#feedback-status')).toHaveText('Спасибо! Отзыв отправлен.');
   expect(errors).toEqual([]);
