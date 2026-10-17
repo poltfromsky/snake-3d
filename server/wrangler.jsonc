@@ -18,8 +18,8 @@
     {
       "binding": "DB",
       "database_name": "izgib-pitona-db",
-      // Заполняется после `npx wrangler d1 create izgib-pitona-db`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Идентификатор базы в аккаунте Cloudflare — не секрет: без токена он бесполезен.
+      "database_id": "35fe5414-8677-4f38-bc9f-896cc5cb5ef4",
       "migrations_dir": "migrations"
     }
   ],
