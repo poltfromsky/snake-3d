@@ -1,8 +1,19 @@
-name: CI
+name: CI / Deploy
+
+# Конвейер: тесты → (только main и только если всё зелёное) база → сервер → сайт.
+# Секреты живут в окружении `production` репозитория и не попадают в логи.
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -42,3 +53,68 @@ jobs:
           curl -sf --retry 60 --retry-connrefused --retry-delay 1 http://127.0.0.1:8787/api/health
       - name: Сквозной тест онлайн-комнаты
         run: npm run test:e2e
+
+  deploy-server:
+    needs: [test, server-e2e]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      api_url: ${{ steps.deploy.outputs.api_url }}
+    defaults:
+      run:
+        working-directory: server
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Миграции базы D1
+        run: npx wrangler d1 migrations apply izgib-pitona-db --remote
+      - name: Выкладка сервера
+        id: deploy
+        env:
+          IP_SALT: ${{ secrets.IP_SALT }}
+        run: |
+          umask 077
+          printf 'IP_SALT=%s\n' "$IP_SALT" > "$RUNNER_TEMP/secrets.env"
+          npx wrangler deploy --secrets-file "$RUNNER_TEMP/secrets.env" > "$RUNNER_TEMP/deploy.txt" 2>&1 || { tail -n 20 "$RUNNER_TEMP/deploy.txt" | grep -v -i salt; exit 1; }
+          rm -f "$RUNNER_TEMP/secrets.env"
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$RUNNER_TEMP/deploy.txt" | head -n 1)
+          test -n "$url" || { echo "Не нашёл адрес сервера в выводе wrangler"; exit 1; }
+          echo "api_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Сервер: $url"
+      - name: Проверка, что сервер жив
+        run: curl -sf --retry 10 --retry-delay 3 "${{ steps.deploy.outputs.api_url }}/api/health"
+
+  deploy-site:
+    needs: deploy-server
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сборка сайта (только файлы игры)
+        env:
+          API_URL: ${{ needs.deploy-server.outputs.api_url }}
+        run: |
+          mkdir _site
+          cp -r index.html styles.css src assets _site/
+          # Адрес сервера подставляется из только что выполненной выкладки.
+          sed -i "s|^const PRODUCTION_API = '';|const PRODUCTION_API = '${API_URL}';|" _site/src/config.js
+          grep -q "PRODUCTION_API = 'https://" _site/src/config.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: pages
+        uses: actions/deploy-pages@v4
