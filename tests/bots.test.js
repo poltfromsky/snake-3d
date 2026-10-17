@@ -86,6 +86,15 @@ for (const level of ['medium', 'hard', 'claude']) {
   });
 }
 
+test('claude в игровом режиме (думает по времени) укладывается в бюджет и не врезается', () => {
+  const s = board({ me: { body: [at(9, 4), at(8, 4), at(7, 4)], dir: RIGHT }, opp: { body: [at(2, 2), at(2, 3)], dir: UP } });
+  const started = Date.now();
+  const move = chooseMove(s, 0, 'claude', seeded(9), { timeBudgetMs: 30 });
+  const spent = Date.now() - started;
+  assert.notEqual(move, 'RIGHT', 'впереди стена');
+  assert.ok(spent < 200, `думал ${spent} мс`);
+});
+
 test('голод растёт без еды и сбрасывается, когда змейка съела яблоко', () => {
   const duel = new Duel({ width: 12, height: 8 }, seeded(5));
   const tracker = new HungerTracker();
