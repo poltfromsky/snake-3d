@@ -38,6 +38,8 @@ const tmpVec = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
 const tmpScale = new THREE.Vector3();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const shakeOffset = new THREE.Vector3();
+const shakeTarget = new THREE.Vector3();
 
 export class SceneRenderer {
   constructor(canvas) {
@@ -50,6 +52,7 @@ export class SceneRenderer {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
     this.cameraTarget = new THREE.Vector3();
+    this.cameraBase = new THREE.Vector3(); // положение камеры без тряски
     this.lookAt = new THREE.Vector3();
     this.shake = 0;
     this.cameraMode = 'angled';
@@ -199,7 +202,9 @@ export class SceneRenderer {
   render(view, focusIndex = 0) {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const time = this.clock.elapsedTime;
-    const t = view.over ? 1 : easeInOut(view.stepProgress);
+    // Равномерно, без «разгона и торможения» на каждой клетке: на медленной скорости
+    // сглаживание ease-in-out давало толчки, которые глаз читает как лаги.
+    const t = view.over ? 1 : view.stepProgress;
 
     const snakes = view.snakes;
     this.snakeViews.forEach((sv, i) => {
@@ -388,26 +393,37 @@ export class SceneRenderer {
     const fitH = (height + 2) / 2 / Math.tan(halfFov);
     const fitW = (width + 2) / 2 / Math.tan(halfFov) / this.camera.aspect;
     const distance = Math.max(fitH, fitW);
-    const lookShift = this.cameraMode === 'top' ? 0 : 1.2;
-    if (this.cameraMode === 'top') {
-      this.cameraTarget.set(0, distance, 0.01);
-    } else {
-      // Наклон ~55°: объём читается, а дальний край не уходит в точку.
-      this.cameraTarget.set(0, distance * 1.02, distance * 0.62 + lookShift);
-    }
+    const top = this.cameraMode === 'top';
+    const lookShift = top ? 0 : 1.2;
+
     // Камера слегка следует за головой.
     const hp = this.cellToWorld(headCell.x, headCell.y);
     tmpVec.set(hp.x * 0.08, 0, hp.z * 0.08 + lookShift);
     const k = instant ? 1 : 1 - Math.exp(-dt * 3);
-    this.camera.position.lerp(this.cameraTarget.clone().add(tmpVec), k);
     this.lookAt.lerp(tmpVec, k);
 
+    if (top) {
+      // Строго над точкой взгляда, «верх кадра» — дальний край поля. Если оставить
+      // верх вертикальным, он почти совпадает с направлением взгляда, ориентация
+      // становится неустойчивой и от любой тряски поле разворачивает боком.
+      this.camera.up.set(0, 0, -1);
+      this.cameraTarget.set(this.lookAt.x, distance, this.lookAt.z);
+    } else {
+      // Наклон ~55°: объём читается, а дальний край не уходит в точку.
+      this.camera.up.set(0, 1, 0);
+      this.cameraTarget.set(0, distance * 1.02, distance * 0.62 + lookShift).add(tmpVec);
+    }
+    if (instant) this.cameraBase.copy(this.cameraTarget);
+    else this.cameraBase.lerp(this.cameraTarget, k);
+
+    // Тряска — сдвиг всей камеры вместе с точкой взгляда, без поворота кадра.
+    shakeOffset.set(0, 0, 0);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 1.5);
-      this.camera.position.x += (Math.random() - 0.5) * this.shake;
-      this.camera.position.y += (Math.random() - 0.5) * this.shake;
+      shakeOffset.set((Math.random() - 0.5) * this.shake, 0, (Math.random() - 0.5) * this.shake);
     }
-    this.camera.lookAt(this.lookAt);
+    this.camera.position.copy(this.cameraBase).add(shakeOffset);
+    this.camera.lookAt(shakeTarget.copy(this.lookAt).add(shakeOffset));
   }
 
   resize() {
@@ -525,10 +541,6 @@ class SnakeView {
     const angle = Math.atan2(-snake.direction.y, snake.direction.x);
     this.head.rotation.y = lerpAngle(this.head.rotation.y, angle, 0.35);
   }
-}
-
-function easeInOut(t) {
-  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
 function easeOutBack(t) {
