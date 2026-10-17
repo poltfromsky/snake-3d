@@ -23,8 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Проверка синтаксиса модулей
-        run: for f in $(find src tools server/src server/test -name '*.js' -o -name '*.mjs'); do node --check "$f"; done
+          cache: npm
+      - run: npm ci
+      - name: Проверка кода ESLint (необъявленные и лишние переменные и т. п.)
+        run: npm run lint
       - name: Тесты логики (игра, дуэль, комната, проверка данных)
         run: npm test
 
