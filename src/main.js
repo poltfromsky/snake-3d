@@ -2,18 +2,19 @@
  * Точка входа: связывает логику, 3D-сцену, звук, сеть и интерфейс.
  *
  * Виды партий (kind):
- *   solo  — одиночная игра (Game);
- *   local — двое за одной клавиатурой (Duel);
- *   host  — хозяин онлайн-комнаты: считает Duel и рассылает снимки;
- *   guest — гость: рисует снимки хозяина и отправляет свои повороты.
+ *   solo   — одиночная игра (Game);
+ *   local  — двое за одной клавиатурой (Duel);
+ *   online — партия на сервере (server/): рисуем его снимки, шлём свои повороты.
  */
 import { DIRECTIONS, Game, MODES } from './core/game.js';
 import { Duel } from './core/duel.js';
 import { SceneRenderer, THEMES } from './render/scene.js';
 import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
-import { normalizeRoomCode, OnlineLink, roomLink } from './net/online.js';
+import {
+  createRoom as requestRoom, normalizeRoomCode, RoomConnection, roomLink,
+} from './net/online.js';
 import { Leaderboard } from './net/leaderboard.js';
-import { APP_VERSION, SUPABASE_ANON_KEY, SUPABASE_URL } from './config.js';
+import { API_BASE, APP_VERSION } from './config.js';
 import {
   addRecord, isRecord, loadRecords, loadSettings, saveSettings, SPEED_FACTORS,
 } from './storage.js';
@@ -44,14 +45,11 @@ const WASD = {
   KeyW: 'UP', KeyS: 'DOWN', KeyA: 'LEFT', KeyD: 'RIGHT',
 };
 
-const STATE_SEND_INTERVAL_MS = 33; // ~30 снимков в секунду гостю
-const COUNTDOWN_MS = 3000;
-
 const settings = loadSettings();
 const audio = new AudioManager();
 audio.setVolumes(settings);
 const renderer = new SceneRenderer($('#scene'));
-const leaderboard = new Leaderboard(SUPABASE_URL, SUPABASE_ANON_KEY);
+const leaderboard = new Leaderboard(API_BASE);
 
 let kind = 'solo';
 let game = createGame();
@@ -60,14 +58,11 @@ let previousScreen = 'menu';
 let lastTime = performance.now();
 
 // Онлайн
-let link = null;
+let conn = null;
 let leaving = false;
-let remote = null; // { snap, receivedAt } — последний снимок у гостя
+let remote = null; // { snap, receivedAt } — последний снимок от сервера
 let remoteNeedsSetup = false;
-let lastStateSent = 0;
-let countdownLeft = 0;
-let lastCountdownShown = 0;
-const rematchVotes = new Set();
+let mySlot = 0;
 
 function createGame() {
   const narrow = window.innerWidth < window.innerHeight;
@@ -91,11 +86,11 @@ function createDuel() {
 }
 
 const isDuel = () => kind !== 'solo';
-const myIndex = () => (kind === 'guest' ? 1 : 0);
+const myIndex = () => (kind === 'online' ? mySlot : 0);
 
-/** То, что рисует сцена: сама игра или вид из снимка хозяина. */
+/** То, что рисует сцена: сама игра или вид из снимка сервера. */
 function currentView() {
-  if (kind !== 'guest' || !remote) return game;
+  if (kind !== 'online' || !remote) return game;
   const { snap, receivedAt } = remote;
   const elapsed = performance.now() - receivedAt;
   return {
@@ -127,13 +122,13 @@ function show(name) {
   $('#hud').classList.toggle('hidden', !hudVisible);
   document.body.classList.toggle('duel', isDuel());
   // В онлайне паузы нет: игра у обоих общая.
-  $('#btn-pause').classList.toggle('hidden', kind === 'host' || kind === 'guest');
+  $('#btn-pause').classList.toggle('hidden', kind === 'online');
 }
 
 function beginPlaying() {
   state = 'playing';
   show(null);
-  const timed = (kind === 'guest' ? remote?.snap.mode : game.opts.mode) === MODES.TIMED;
+  const timed = (kind === 'online' ? remote?.snap.mode : game.opts.mode) === MODES.TIMED;
   $('#hud-timer-box').classList.toggle('hidden', !timed);
   audio.startMusic();
   lastTime = performance.now();
@@ -156,7 +151,7 @@ function startLocalDuel() {
 }
 
 function pause() {
-  if (state !== 'playing' || kind === 'host' || kind === 'guest') return;
+  if (state !== 'playing' || kind === 'online') return;
   state = 'paused';
   audio.pauseMusic();
   show('pause');
@@ -249,10 +244,10 @@ function setHtml(el, html) {
 
 function updateHud() {
   if (isDuel()) {
-    const scores = kind === 'guest'
+    const scores = kind === 'online'
       ? (remote?.snap.players.map((p) => p.score) ?? [0, 0])
       : game.players.map((p) => p.score);
-    const timeLeft = kind === 'guest' ? remote?.snap.timeLeft : game.timeLeftMs;
+    const timeLeft = kind === 'online' ? remote?.snap.timeLeft : game.timeLeftMs;
     const theme = THEMES[settings.theme] ?? THEMES.neon;
     const color = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
     setHtml($('#hud-duel'), `<span style="color:${color(theme.head)}">● ${playerName(0)} <b>${scores[0]}</b></span>`
@@ -295,7 +290,7 @@ function handleEvents(events) {
         break;
       case 'gameOver':
         if (!isDuel()) gameOver(e.reason);
-        else if (kind === 'guest') duelOver(e, e.scores, e.deaths);
+        else if (kind === 'online') duelOver(e, e.scores, e.deaths);
         else duelOver(e, game.players.map((p) => p.score), game.players.map((p) => p.deathReason));
         break;
       default:
@@ -310,32 +305,19 @@ function frame(now) {
   const dt = Math.min(now - lastTime, 250);
   lastTime = now;
 
-  if (kind === 'host' && state === 'countdown') tickCountdown(dt);
-
-  if (state === 'playing' && kind !== 'guest') {
+  if (state === 'playing' && kind !== 'online') {
     const events = game.update(dt);
-    if (kind === 'host' && events.length) {
-      // Гостю нужны итоговые очки и причины прямо в событии конца игры.
-      const outgoing = events.map((e) => (e.type === 'gameOver'
-        ? { ...e, scores: game.players.map((p) => p.score), deaths: game.players.map((p) => p.deathReason) }
-        : e));
-      link.send({ t: 'events', list: outgoing });
-    }
     handleEvents(events);
     const { baseTicksPerSecond, maxTicksPerSecond } = game.opts;
     audio.setIntensity((game.ticksPerSecond - baseTicksPerSecond) / (maxTicksPerSecond - baseTicksPerSecond));
   }
-  if (kind === 'host' && link?.connected && now - lastStateSent > STATE_SEND_INTERVAL_MS) {
-    link.send({ t: 'state', s: game.snapshot() });
-    lastStateSent = now;
-  }
   if (state === 'playing' || state === 'countdown') updateHud();
 
-  if (kind === 'guest' && remoteNeedsSetup && remote) {
+  if (kind === 'online' && remoteNeedsSetup && remote) {
     setupScene();
     remoteNeedsSetup = false;
   }
-  if (kind !== 'guest' || remote) renderer.render(currentView(), myIndex());
+  if (kind !== 'online' || remote) renderer.render(currentView(), myIndex());
   requestAnimationFrame(frame);
 }
 
@@ -347,6 +329,12 @@ function setOnlineStatus(text, isError = false) {
   el.classList.toggle('error', isError);
 }
 
+function setBusy(selector, busy, busyText, idleText) {
+  const button = $(selector);
+  button.disabled = busy;
+  button.textContent = busy ? busyText : idleText;
+}
+
 function openOnlineScreen() {
   leaveRoom();
   state = 'lobby';
@@ -356,47 +344,42 @@ function openOnlineScreen() {
   show('online');
 }
 
-function makeLink() {
+/** Подключается к комнате на сервере; общая часть для создателя и друга. */
+async function connectToRoom(code) {
+  leaveRoom();
   leaving = false;
-  return new OnlineLink({
-    onOpen: () => {
-      if (kind === 'host') {
-        setOnlineStatus('Друг подключился! Начинаем…');
-        startOnlineRound();
-      } else {
-        setOnlineStatus('Подключено! Ждём старта…');
-      }
-    },
+  remote = null;
+  const connection = new RoomConnection(API_BASE, code, {
     onMessage: handleNetMessage,
     onClose: () => {
-      if (leaving) return;
-      toast('Друг отключился');
+      if (leaving || conn !== connection) return;
+      toast('Связь с сервером потеряна');
       toMenu();
     },
-    onError: (text) => {
-      setOnlineStatus(text, true);
-      if (state !== 'lobby') {
-        toast('Связь потеряна');
-        toMenu();
-      }
-    },
   });
+  conn = connection;
+  const joined = await connection.connect();
+  kind = 'online';
+  mySlot = joined.slot;
+  return joined;
 }
 
-async function createRoom() {
-  leaveRoom();
-  kind = 'host';
-  link = makeLink();
+async function createRoomFlow() {
+  setBusy('[data-action="create-room"]', true, 'Создаём…', 'Создать комнату');
   setOnlineStatus('Создаём комнату…');
   try {
-    const code = await link.host();
+    const code = await requestRoom(API_BASE, { mode: settings.mode, speed: settings.speed });
+    await connectToRoom(code);
     $('#online-start').classList.add('hidden');
     $('#online-room').classList.remove('hidden');
     $('#room-link').value = roomLink(code);
     $('#room-code').textContent = code;
     setOnlineStatus('Ждём друга… Отправьте ему ссылку.');
-  } catch {
-    kind = 'solo';
+  } catch (err) {
+    leaveRoom();
+    setOnlineStatus(err?.message || 'Не удалось создать комнату.', true);
+  } finally {
+    setBusy('[data-action="create-room"]', false, '', 'Создать комнату');
   }
 }
 
@@ -406,54 +389,26 @@ async function joinRoom(rawCode) {
     setOnlineStatus('Введите код комнаты из ссылки друга.', true);
     return;
   }
-  leaveRoom();
-  kind = 'guest';
-  remote = null;
-  link = makeLink();
+  setBusy('#join-form button[type=submit]', true, 'Подключаемся…', 'Войти');
   setOnlineStatus(`Подключаемся к комнате ${code}…`);
   try {
-    await link.join(code);
-  } catch {
-    kind = 'solo';
+    await connectToRoom(code);
+    setOnlineStatus('Подключено! Начинаем…');
+  } catch (err) {
+    leaveRoom();
+    setOnlineStatus(err?.message || 'Не удалось подключиться.', true);
+  } finally {
+    setBusy('#join-form button[type=submit]', false, '', 'Войти');
   }
 }
 
 function leaveRoom() {
-  if (!link) return;
+  if (!conn) return;
   leaving = true;
-  link.send({ t: 'bye' });
-  link.close();
-  link = null;
+  conn.close();
+  conn = null;
   remote = null;
-}
-
-/** Хозяин: новая партия с отсчётом 3-2-1. */
-function startOnlineRound() {
-  game = createDuel();
-  rematchVotes.clear();
-  setupScene();
-  link.send({ t: 'round' });
-  link.send({ t: 'state', s: game.snapshot() });
-  state = 'countdown';
-  countdownLeft = COUNTDOWN_MS;
-  lastCountdownShown = 0;
-  show(null);
-  audio.startMusic();
-}
-
-function tickCountdown(dt) {
-  countdownLeft -= dt;
-  const n = Math.ceil(countdownLeft / 1000);
-  if (n !== lastCountdownShown && n > 0) {
-    lastCountdownShown = n;
-    showCountdown(n);
-    link.send({ t: 'countdown', n });
-  }
-  if (countdownLeft <= 0) {
-    link.send({ t: 'go' });
-    showCountdown(0);
-    beginPlaying();
-  }
+  if (kind === 'online') kind = 'solo';
 }
 
 function showCountdown(n) {
@@ -461,58 +416,53 @@ function showCountdown(n) {
   audio.play(n > 0 ? 'click' : 'levelUp');
 }
 
+/** Сообщения сервера (протокол описан в src/core/room.js). */
 function handleNetMessage(msg) {
   if (!msg || typeof msg !== 'object') return;
   switch (msg.t) {
     case 'state':
-      if (kind !== 'guest') return;
       remote = { snap: msg.s, receivedAt: performance.now() };
+      if (Array.isArray(msg.events) && msg.events.length) handleEvents(msg.events);
       break;
     case 'round':
-      if (kind !== 'guest') return;
       remoteNeedsSetup = true;
       state = 'countdown';
       show(null);
       audio.startMusic();
       break;
     case 'countdown':
-      if (kind === 'guest') showCountdown(msg.n);
+      showCountdown(msg.n);
       break;
     case 'go':
-      if (kind === 'guest') { showCountdown(0); beginPlaying(); }
+      showCountdown(0);
+      beginPlaying();
       break;
-    case 'events':
-      if (kind === 'guest' && Array.isArray(msg.list)) handleEvents(msg.list);
+    case 'rematch': {
+      const mine = msg.votes?.[mySlot];
+      $('#duel-status').textContent = mine ? 'Ждём ответа друга…' : 'Друг хочет реванш!';
       break;
-    case 'turn':
-      if (kind === 'host' && state === 'playing' && DIRECTIONS[msg.dir]) game.turn(1, DIRECTIONS[msg.dir]);
+    }
+    case 'opponent':
+      // Второй игрок подключился — партию запустит сам сервер.
+      if (!msg.connected && state !== 'lobby') {
+        toast('Друг вышел из игры');
+        toMenu();
+      }
       break;
-    case 'rematch':
-      voteRematch(kind === 'host' ? 1 : 0, false);
-      break;
-    case 'bye':
-      leaving = true;
-      toast('Друг вышел из игры');
-      toMenu();
+    case 'error':
+      setOnlineStatus(msg.text, true);
       break;
     default:
       break;
   }
 }
 
-/** Реванш начинается, когда его хотят оба. */
-function voteRematch(index, mine) {
+function voteRematch() {
   if (kind === 'local') {
     startLocalDuel();
     return;
   }
-  rematchVotes.add(index);
-  if (mine) link?.send({ t: 'rematch' });
-  if (rematchVotes.size >= 2 && kind === 'host') {
-    startOnlineRound();
-    return;
-  }
-  $('#duel-status').textContent = mine ? 'Ждём ответа друга…' : 'Друг хочет реванш!';
+  conn?.send({ t: 'rematch' });
 }
 
 /* ---------------- Управление ---------------- */
@@ -520,8 +470,8 @@ function voteRematch(index, mine) {
 function steer(index, dirName) {
   if (state !== 'playing') return;
   if (kind === 'solo') game.turn(DIRECTIONS[dirName]);
-  else if (kind === 'local' || kind === 'host') game.turn(index, DIRECTIONS[dirName]);
-  else if (kind === 'guest') link?.send({ t: 'turn', dir: dirName });
+  else if (kind === 'local') game.turn(index, DIRECTIONS[dirName]);
+  else if (kind === 'online') conn?.send({ t: 'turn', dir: dirName });
 }
 
 window.addEventListener('keydown', (e) => {
@@ -567,7 +517,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
 });
 
-window.addEventListener('beforeunload', () => link?.send({ t: 'bye' }));
+window.addEventListener('beforeunload', () => conn?.close());
 
 $('#btn-pause').addEventListener('click', pause);
 
@@ -580,7 +530,7 @@ document.addEventListener('click', async (e) => {
     case 'play': startSolo(); break;
     case 'local': startLocalDuel(); break;
     case 'online': openOnlineScreen(); break;
-    case 'create-room': createRoom(); break;
+    case 'create-room': createRoomFlow(); break;
     case 'copy-link':
       try {
         await navigator.clipboard.writeText($('#room-link').value);
@@ -590,7 +540,7 @@ document.addEventListener('click', async (e) => {
         setOnlineStatus('Скопируйте ссылку вручную (Ctrl+C).');
       }
       break;
-    case 'rematch': voteRematch(myIndex(), true); break;
+    case 'rematch': voteRematch(); break;
     case 'leave': toMenu(); break;
     case 'resume': resume(); break;
     case 'menu': toMenu(); break;
@@ -734,8 +684,10 @@ $('#record-form').addEventListener('submit', async (e) => {
     $('#record-status').textContent = 'Отправляем…';
     try {
       await leaderboard.submitRecord({ ...entry, mode: settings.mode, comment: $('#record-comment').value });
-    } catch {
-      $('#record-status').textContent = 'Не получилось отправить в общую таблицу — у вас результат сохранён.';
+    } catch (err) {
+      // Сервер объясняет отказ сам (например, «слишком часто») — показываем его слова.
+      const reason = err?.message && !/^HTTP|fetch|network|abort/i.test(err.message) ? err.message : 'Нет связи с сервером.';
+      $('#record-status').textContent = `${reason} У вас результат сохранён.`;
       button.disabled = false;
       return;
     }
@@ -778,8 +730,10 @@ $('#feedback-form').addEventListener('submit', async (e) => {
     });
     status.textContent = 'Спасибо! Отзыв отправлен.';
     $('#feedback-message').value = '';
-  } catch {
-    status.textContent = 'Не получилось отправить. Проверьте интернет и попробуйте ещё раз.';
+  } catch (err) {
+    status.textContent = err?.message && !/^HTTP|fetch|network|abort/i.test(err.message)
+      ? err.message
+      : 'Не получилось отправить. Проверьте интернет и попробуйте ещё раз.';
   } finally {
     button.disabled = false;
   }
@@ -807,7 +761,7 @@ function bindSegmented(id, key, onChange) {
 }
 
 bindSegmented('#set-speed', 'speed', (v) => {
-  if (kind !== 'guest') game.opts.speedFactor = SPEED_FACTORS[v];
+  if (kind !== 'online') game.opts.speedFactor = SPEED_FACTORS[v];
 });
 bindSegmented('#set-theme', 'theme', () => {
   // Тема меняется только в меню, чтобы не сбрасывать текущую партию.

@@ -1,14 +1,14 @@
 /**
- * Подключение к общей базе (Supabase).
+ * Адрес сервера игры (Cloudflare Worker из папки server/).
  *
- * Сюда кладётся только публичный anon-ключ: он и так виден в коде страницы,
- * а права ограничены политиками RLS (см. supabase/schema.sql).
- * Секретный service_role-ключ в игру не попадает никогда.
- *
- * Пока поля пустые, игра работает как раньше: рекорды хранятся
- * только в браузере, кнопка отзыва скрыта.
+ * Локально — `npm run dev` в server/ поднимает его на :8787.
+ * На сайте — адрес из `wrangler deploy` (*.workers.dev).
+ * Пока адрес не задан, онлайн-игра и общие рекорды скрыты, остальное работает.
  */
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+const PRODUCTION_API = '';
 
-export const APP_VERSION = '1.2.0';
+const isLocal = ['localhost', '127.0.0.1'].includes(globalThis.location?.hostname);
+
+export const API_BASE = isLocal ? 'http://localhost:8787' : PRODUCTION_API;
+
+export const APP_VERSION = '1.3.0';

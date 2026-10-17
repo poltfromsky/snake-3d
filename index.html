@@ -13,8 +13,7 @@
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-        "peerjs": "https://cdn.jsdelivr.net/npm/peerjs@1.5.5/+esm"
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
       }
     }
   </script>
@@ -48,7 +47,7 @@
       <div class="duo">
         <span class="duo-title">Вдвоём</span>
         <div class="row">
-          <button class="btn" data-action="online">Онлайн по ссылке</button>
+          <button class="btn online-only hidden" data-action="online">Онлайн по ссылке</button>
           <button class="btn" data-action="local">Одна клавиатура</button>
         </div>
       </div>
@@ -57,14 +56,32 @@
         <button class="btn" data-action="settings">Настройки</button>
       </div>
       <button class="btn link-btn online-only hidden" data-action="feedback">💬 Оставить отзыв об игре</button>
-      <p class="hint">←↑→↓ или WASD — поворот · Пробел/Esc — пауза · свайпы на телефоне</p>
-      <div class="legend">
-        <span><i class="dot apple"></i>яблоко +1</span>
-        <span><i class="dot bad"></i>гниль −1</span>
-        <span><i class="dot slow"></i>замедление</span>
-        <span><i class="dot ghost"></i>призрак</span>
-        <span><i class="dot stone"></i>камень</span>
-      </div>
+      <details class="howto" open>
+        <summary>Как играть</summary>
+        <div class="howto-grid">
+          <section aria-labelledby="howto-controls">
+            <h3 id="howto-controls">Управление</h3>
+            <ul class="keys">
+              <li><b>Поворот</b><span class="keycaps"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd><i>или</i><kbd>WASD</kbd></span></li>
+              <li><b>Пауза</b><span class="keycaps"><kbd>Пробел</kbd><i>или</i><kbd>Esc</kbd></span></li>
+              <li><b>Старт из меню</b><span class="keycaps"><kbd>Enter</kbd></span></li>
+              <li><b>На телефоне</b><span class="keycaps">свайп в нужную сторону</span></li>
+            </ul>
+            <p class="howto-note"><b>Одна клавиатура:</b> игрок 1 — <kbd>WASD</kbd>, игрок 2 — стрелки.</p>
+          </section>
+          <section aria-labelledby="howto-items">
+            <h3 id="howto-items">На поле</h3>
+            <ul class="items">
+              <li><i class="dot apple"></i><b>Яблоко</b><span>+1 сегмент, +10 очков</span></li>
+              <li><i class="dot bad"></i><b>Гниль</b><span>−1 сегмент, −5 очков</span></li>
+              <li><i class="dot slow"></i><b>Замедление</b><span>5 секунд медленнее</span></li>
+              <li><i class="dot ghost"></i><b>Призрак</b><span>5 секунд сквозь себя</span></li>
+              <li><i class="dot stone"></i><b>Камень</b><span>врезался — конец</span></li>
+            </ul>
+            <p class="howto-note">Каждые 5 яблок — новый уровень: быстрее и больше камней.</p>
+          </section>
+        </div>
+      </details>
       <p class="credits" id="music-credits"></p>
     </div>
   </section>

@@ -3,7 +3,7 @@
 ## Библиотеки
 
 - [Three.js](https://threejs.org) r170 — MIT License. Загружается с CDN jsDelivr.
-- [PeerJS](https://peerjs.com) 1.5.5 — MIT License. Загружается с CDN jsDelivr только для онлайн-игры; для установки соединения используется публичный сервер PeerJS.
+- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) — Apache-2.0 / MIT. Инструмент Cloudflare для запуска и выкладки сервера (только для разработки, в игру не входит).
 - Шрифты [Unbounded](https://fonts.google.com/specimen/Unbounded) и [Inter](https://fonts.google.com/specimen/Inter) — SIL Open Font License. Загружаются с Google Fonts.
 
 ## Звук

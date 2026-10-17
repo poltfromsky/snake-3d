@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  buildFeedback, buildRecord, cleanText, Leaderboard,
-} from '../src/net/leaderboard.js';
+import { buildFeedback, buildRecord, cleanText } from '../src/core/validate.js';
+import { Leaderboard } from '../src/net/leaderboard.js';
 
 test('cleanText убирает управляющие символы и обрезает по длине', () => {
   assert.equal(cleanText('  a\u0000b\n\nc  ', 10), 'a b c');
@@ -18,33 +17,37 @@ test('buildRecord отсекает некорректные рекорды', () 
   assert.equal(buildRecord({ ...ok, score: 0 }), null);
   assert.equal(buildRecord({ ...ok, score: 999999 }), null);
   assert.equal(buildRecord({ ...ok, score: 1.5 }), null);
+  assert.equal(buildRecord(), null);
 });
 
 test('buildFeedback требует текст и проверяет оценку', () => {
   assert.equal(buildFeedback({ message: 'ok' }), null);
-  const fb = buildFeedback({ name: '', rating: 9, message: 'Классная игра!', version: '1.2.0' });
-  assert.deepEqual(fb, { name: null, rating: null, message: 'Классная игра!', app_version: '1.2.0' });
+  const fb = buildFeedback({ name: '', rating: 9, message: 'Классная игра!', version: '1.3.0' });
+  assert.deepEqual(fb, { name: null, rating: null, message: 'Классная игра!', app_version: '1.3.0' });
 });
 
-test('Leaderboard выключен без адреса и ключа', () => {
-  assert.equal(new Leaderboard('', '').enabled, false);
+test('Leaderboard выключен без адреса сервера', () => {
+  assert.equal(new Leaderboard('').enabled, false);
 });
 
-test('top() строит правильный запрос к REST API', async () => {
-  let called;
-  const fakeFetch = async (url, init) => {
-    called = { url, init };
+test('top() обращается к /api/records нужного режима', async () => {
+  let calledUrl;
+  const fakeFetch = async (url) => {
+    calledUrl = url;
     return { ok: true, json: async () => [{ name: 'A', score: 10 }] };
   };
-  const lb = new Leaderboard('https://x.supabase.co/', 'anon', fakeFetch);
+  const lb = new Leaderboard('https://api.example/', fakeFetch);
   const rows = await lb.top('walls');
   assert.equal(rows[0].name, 'A');
-  assert.match(called.url, /^https:\/\/x\.supabase\.co\/rest\/v1\/records\?/);
-  assert.match(called.url, /mode=eq\.walls/);
-  assert.equal(called.init.headers.apikey, 'anon');
+  assert.equal(calledUrl, 'https://api.example/api/records?mode=walls');
 });
 
-test('ошибка сервера превращается в исключение', async () => {
-  const lb = new Leaderboard('https://x.supabase.co', 'anon', async () => ({ ok: false, status: 401 }));
-  await assert.rejects(() => lb.submitRecord({ name: 'A', mode: 'classic', score: 10, length: 4 }), /401/);
+test('текст ошибки сервера доходит до игрока', async () => {
+  const lb = new Leaderboard('https://api.example', async () => ({
+    ok: false, status: 429, json: async () => ({ error: 'Слишком часто.' }),
+  }));
+  await assert.rejects(
+    () => lb.submitRecord({ name: 'A', mode: 'classic', score: 10, length: 4 }),
+    /Слишком часто/,
+  );
 });

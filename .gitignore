@@ -9,3 +9,7 @@ Thumbs.db
 *.mp4
 *.mov
 *.webm
+
+# Сервер: локальные данные wrangler и секреты
+.wrangler/
+.dev.vars

@@ -1,29 +1,13 @@
 /**
- * Онлайн-игра вдвоём без своего сервера.
+ * Онлайн-игра вдвоём через свой сервер (Cloudflare, папка server/).
  *
- * Браузеры соединяются напрямую по WebRTC. Чтобы найти друг друга, они
- * используют бесплатный публичный сервер PeerJS: через него идёт только
- * служебный обмен для установки соединения, сама игра — напрямую.
- *
- * Хозяин комнаты считает всю игру (класс Duel) и рассылает снимки состояния,
- * гость только присылает свои повороты. Так у обоих одна и та же партия.
+ * Партию считает сервер, оба игрока — равноправные клиенты: присылают свои
+ * повороты и получают снимки состояния по WebSocket. Работает в любой сети,
+ * где открываются обычные сайты: прямое соединение между устройствами не нужно.
  */
 
-const ID_PREFIX = 'izgib-pitona-3d-';
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // без похожих 0/O, 1/I/L
-
-let peerModulePromise = null;
-
-/** PeerJS грузится только когда игрок выбрал онлайн — одиночная игра от него не зависит. */
-function loadPeer() {
-  peerModulePromise ??= import('peerjs').then((m) => m.Peer ?? m.default);
-  return peerModulePromise;
-}
-
-export function makeRoomCode(length = 5) {
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
-  return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-}
+const PING_EVERY_MS = 15000;
+const CONNECT_TIMEOUT_MS = 10000;
 
 export function normalizeRoomCode(raw) {
   return String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -37,87 +21,93 @@ export function roomLink(code) {
   return url.toString();
 }
 
-const ERRORS = {
-  'peer-unavailable': 'Комната не найдена. Проверьте код или попросите друга создать новую.',
-  'unavailable-id': 'Такой код уже занят, создайте комнату ещё раз.',
-  network: 'Нет связи с сервером соединения. Проверьте интернет или VPN.',
-  'server-error': 'Сервер соединения недоступен. Попробуйте позже.',
-  'browser-incompatible': 'Браузер не поддерживает WebRTC.',
-};
-
-const describe = (err) => ERRORS[err?.type] ?? `Ошибка соединения: ${err?.type ?? err?.message ?? err}`;
+/** Создаёт комнату на сервере с режимом и скоростью создателя. */
+export async function createRoom(apiBase, { mode, speed }) {
+  let res;
+  try {
+    res = await fetch(`${apiBase}/api/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, speed }),
+    });
+  } catch {
+    throw new Error('Сервер игры недоступен. Проверьте интернет.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.code) throw new Error(data.error ?? 'Не удалось создать комнату.');
+  return data.code;
+}
 
 /**
- * Соединение между двумя игроками. Колбэки:
- * onOpen() — канал готов, onMessage(msg), onClose(), onError(text).
+ * Подключение к комнате. Колбэки: onMessage(msg), onClose(reason).
+ * connect() завершается, когда сервер принял игрока (сообщение joined).
  */
-export class OnlineLink {
-  constructor(handlers) {
-    this.handlers = handlers;
-    this.peer = null;
-    this.conn = null;
-    this.role = null;
-    this.code = null;
-  }
-
-  async host() {
-    const Peer = await loadPeer();
-    this.role = 'host';
-    this.code = makeRoomCode();
-    this.peer = new Peer(ID_PREFIX + this.code, { debug: 0 });
-    this.peer.on('error', (err) => this.handlers.onError?.(describe(err)));
-    this.peer.on('connection', (conn) => {
-      // В комнате два места: остальных вежливо закрываем.
-      if (this.conn?.open) {
-        conn.on('open', () => conn.close());
-        return;
-      }
-      this.attach(conn);
-    });
-    await new Promise((resolve, reject) => {
-      this.peer.once('open', resolve);
-      this.peer.once('error', reject);
-    });
-    return this.code;
-  }
-
-  async join(code) {
-    const Peer = await loadPeer();
-    this.role = 'guest';
+export class RoomConnection {
+  constructor(apiBase, code, handlers) {
+    this.url = `${apiBase.replace(/^http/, 'ws')}/api/rooms/${encodeURIComponent(code)}/ws`;
     this.code = code;
-    this.peer = new Peer({ debug: 0 });
-    this.peer.on('error', (err) => this.handlers.onError?.(describe(err)));
-    await new Promise((resolve, reject) => {
-      this.peer.once('open', resolve);
-      this.peer.once('error', reject);
-    });
-    this.attach(this.peer.connect(ID_PREFIX + code, { reliable: true, serialization: 'json' }));
+    this.handlers = handlers;
+    this.socket = null;
+    this.ping = null;
+    this.closedByUs = false;
   }
 
-  attach(conn) {
-    this.conn = conn;
-    conn.on('open', () => this.handlers.onOpen?.());
-    conn.on('data', (msg) => this.handlers.onMessage?.(msg));
-    conn.on('close', () => this.handlers.onClose?.());
-    conn.on('error', (err) => this.handlers.onError?.(describe(err)));
+  connect() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = (text) => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(text));
+      };
+      const timer = setTimeout(() => {
+        fail('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
+        this.close();
+      }, CONNECT_TIMEOUT_MS);
+
+      this.socket = new WebSocket(this.url);
+      this.socket.addEventListener('message', (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch { return; }
+        if (!settled) {
+          if (msg.t === 'joined') {
+            settled = true;
+            clearTimeout(timer);
+            resolve(msg);
+          } else if (msg.t === 'error') {
+            clearTimeout(timer);
+            fail(msg.text);
+            return;
+          }
+        }
+        this.handlers.onMessage?.(msg);
+      });
+      this.socket.addEventListener('close', () => {
+        clearTimeout(timer);
+        clearInterval(this.ping);
+        fail('Не удалось подключиться к комнате.');
+        if (!this.closedByUs) this.handlers.onClose?.();
+      });
+      // Пинг не даёт промежуточным прокси закрыть «молчащее» соединение.
+      this.ping = setInterval(() => this.send({ t: 'ping' }), PING_EVERY_MS);
+    });
   }
 
   get connected() {
-    return Boolean(this.conn?.open);
+    return this.socket?.readyState === WebSocket.OPEN;
   }
 
   send(msg) {
-    if (this.conn?.open) this.conn.send(msg);
+    if (this.connected) this.socket.send(JSON.stringify(msg));
   }
 
   close() {
+    this.closedByUs = true;
+    clearInterval(this.ping);
     try {
-      this.conn?.close();
-      this.peer?.destroy();
+      this.socket?.close(1000, 'bye');
     } catch {
-      // Соединение уже закрыто — ничего страшного.
+      // Уже закрыто.
     }
-    this.conn = null;
-    this.peer = null;
   }
 }

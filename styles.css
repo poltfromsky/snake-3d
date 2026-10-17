@@ -403,6 +403,81 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.4; }
 .records .loading { display: block; text-align: center; color: var(--muted); border: none; }
 .records .loading::before { content: none; }
 
+/* ---------- Как играть ---------- */
+.howto {
+  text-align: left;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+}
+
+.howto summary {
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.howto summary::-webkit-details-marker { display: none; }
+.howto summary::before { content: '▸'; display: inline-block; margin-right: 8px; transition: transform 0.2s; color: var(--accent); }
+.howto[open] summary::before { transform: rotate(90deg); }
+
+.howto-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 18px;
+  padding: 0 14px 12px;
+}
+
+.howto h3 {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.howto ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+
+.keys li { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.keys li b { font-weight: 600; }
+.keycaps { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); }
+.keycaps i { font-style: normal; margin: 0 3px; }
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 5px;
+  font: 600 11px Inter, sans-serif;
+  text-align: center;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+
+.items li {
+  display: grid;
+  grid-template-columns: 12px auto;
+  column-gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.items li .dot { margin: 0; }
+.items li span { grid-column: 2; font-size: 12px; color: var(--muted); }
+
+.howto-note { margin: 10px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.howto-note b { color: var(--text); font-weight: 600; }
+
+@media (max-width: 520px) {
+  .howto-grid { grid-template-columns: 1fr; gap: 12px; }
+}
+
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 @keyframes toast {

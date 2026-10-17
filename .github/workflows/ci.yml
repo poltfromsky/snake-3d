@@ -13,6 +13,33 @@ jobs:
         with:
           node-version: 22
       - name: Проверка синтаксиса модулей
-        run: for f in $(find src tools -name '*.js' -o -name '*.mjs'); do node --check "$f"; done
-      - name: Тесты игровой логики
+        run: for f in $(find src tools server/src server/test -name '*.js' -o -name '*.mjs'); do node --check "$f"; done
+      - name: Тесты логики (игра, дуэль, комната, проверка данных)
         run: npm test
+
+  server-e2e:
+    # Поднимает настоящий сервер локально (wrangler dev, без аккаунта Cloudflare)
+    # и играет онлайн-партию двумя клиентами по WebSocket.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Таблицы в локальной базе
+        run: npm run db:local
+      - name: Запуск сервера
+        run: |
+          npx wrangler dev --port 8787 --ip 127.0.0.1 > wrangler.log 2>&1 &
+          curl -sf --retry 60 --retry-connrefused --retry-delay 1 http://127.0.0.1:8787/api/health
+      - name: Сквозной тест онлайн-комнаты
+        run: npm run test:e2e
+      - name: Лог сервера при ошибке
+        if: failure()
+        run: cat wrangler.log

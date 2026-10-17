@@ -37,6 +37,7 @@ export class Duel {
     this.applesEaten = 0;
     this.level = 1;
     this.accumulatorMs = 0;
+    this.stepCount = 0; // по нему хозяин понимает, что пора слать снимок
     this.timeLeftMs = mode === MODES.TIMED ? this.opts.timedDurationMs : null;
     this.over = false;
     this.winner = null; // 0, 1 или null — ничья
@@ -120,6 +121,7 @@ export class Duel {
   /** Обе змейки ходят одновременно, поэтому сначала считаем все новые головы. */
   step() {
     const events = [];
+    this.stepCount += 1;
     const [a, b] = this.players;
     for (const p of this.players) {
       if (p.turnQueue.length) p.direction = p.turnQueue.shift();

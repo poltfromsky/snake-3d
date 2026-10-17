@@ -1,0 +1,31 @@
+{
+  // Сервер «Изгиба Питона 3D»: онлайн-комнаты (Durable Objects) и рекорды/отзывы (D1).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "izgib-pitona",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [
+    // На бесплатном тарифе доступны только Durable Objects с SQLite.
+    { "tag": "v1", "new_sqlite_classes": ["Room"] }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "izgib-pitona-db",
+      // Заполняется после `npx wrangler d1 create izgib-pitona-db`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    // Сайты, которым разрешено обращаться к API рекордов.
+    "ALLOWED_ORIGINS": "https://poltfromsky.github.io,http://localhost:5173,http://127.0.0.1:5173"
+  }
+}
