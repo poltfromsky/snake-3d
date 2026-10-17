@@ -46,6 +46,12 @@ function createGame() {
   });
 }
 
+/** Пересобирает сцену и подстраивает цвета интерфейса под тему. */
+function setupScene(currentGame, currentSettings) {
+  document.documentElement.dataset.theme = currentSettings.theme;
+  renderer.setup(currentGame, currentSettings);
+}
+
 /* ---------------- Экраны ---------------- */
 
 const screens = ['menu', 'pause', 'over', 'records', 'settings'];
@@ -57,7 +63,7 @@ function show(name) {
 
 function startGame() {
   game = createGame();
-  renderer.setup(game, settings);
+  setupScene(game, settings);
   state = 'playing';
   show(null);
   $('#hud').classList.remove('hidden');
@@ -86,7 +92,7 @@ function toMenu() {
   state = 'menu';
   audio.pauseMusic();
   game = createGame();
-  renderer.setup(game, settings);
+  setupScene(game, settings);
   show('menu');
 }
 
@@ -240,7 +246,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'back':
       show(previousScreen);
-      if (previousScreen === 'menu') renderer.setup(game = createGame(), settings);
+      if (previousScreen === 'menu') setupScene(game = createGame(), settings);
       break;
     default: break;
   }
@@ -263,7 +269,7 @@ $('#mode-select').addEventListener('click', (e) => {
   saveSettings(settings);
   markActive($('#mode-select'), 'mode', mode);
   game = createGame();
-  renderer.setup(game, settings);
+  setupScene(game, settings);
 });
 
 /* ---------------- Рекорды ---------------- */
@@ -334,7 +340,7 @@ function bindSegmented(id, key, onChange) {
 bindSegmented('#set-speed', 'speed', (v) => { game.opts.speedFactor = SPEED_FACTORS[v]; });
 bindSegmented('#set-theme', 'theme', () => {
   // Тема меняется только в меню, чтобы не сбрасывать текущую партию.
-  if (state === 'menu') renderer.setup(game, settings);
+  if (state === 'menu') setupScene(game, settings);
 });
 bindSegmented('#set-camera', 'camera', (v) => { renderer.cameraMode = v; });
 
@@ -361,6 +367,6 @@ function renderCredits() {
 
 markActive($('#mode-select'), 'mode', settings.mode);
 renderCredits();
-renderer.setup(game, settings);
+setupScene(game, settings);
 show('menu');
 requestAnimationFrame(frame);

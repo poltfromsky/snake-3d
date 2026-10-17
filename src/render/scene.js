@@ -32,6 +32,9 @@ const PARTICLE_COUNT = 120;
 const tmpMatrix = new THREE.Matrix4();
 const tmpColor = new THREE.Color();
 const tmpVec = new THREE.Vector3();
+const tmpQuat = new THREE.Quaternion();
+const tmpScale = new THREE.Vector3();
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 export class SceneRenderer {
   constructor(canvas) {
@@ -140,7 +143,8 @@ export class SceneRenderer {
     const wallMat = new THREE.MeshStandardMaterial({
       color: deadlyWalls ? t.wall : t.grid,
       emissive: deadlyWalls ? t.wall : 0x000000,
-      emissiveIntensity: deadlyWalls ? 1.4 : 0,
+      // Слабее, чем кажется нужным: bloom сам добавляет свечение, иначе яркие стены пересвечивают кадр.
+      emissiveIntensity: deadlyWalls ? 0.45 : 0,
       roughness: 0.4,
     });
     const h = deadlyWalls ? 0.6 : 0.25;
@@ -169,6 +173,15 @@ export class SceneRenderer {
     this.snakeMesh.castShadow = true;
     this.snakeMesh.count = 0;
     this.scene.add(this.snakeMesh);
+
+    // Перемычки между соседними сегментами — тело выглядит цельным, а не набором кубиков.
+    if (this.jointMesh) this.scene.remove(this.jointMesh);
+    this.jointMesh = new THREE.InstancedMesh(
+      new RoundedBoxGeometry(1, 0.56, 0.62, 2, 0.2), this.snakeMaterial, maxSegments,
+    );
+    this.jointMesh.castShadow = true;
+    this.jointMesh.count = 0;
+    this.scene.add(this.jointMesh);
 
     this.head = new THREE.Group();
     const headMesh = new THREE.Mesh(
@@ -228,19 +241,48 @@ export class SceneRenderer {
     const n = game.snake.length;
     const head = new THREE.Color(this.theme.head);
     const tail = new THREE.Color(this.theme.tail);
-    this.snakeMesh.count = Math.max(0, n - 1);
-    for (let i = 1; i < n; i += 1) {
+    const points = [];
+    for (let i = 0; i < n; i += 1) {
       const p = this.segmentPosition(game, i, t);
       // Лёгкая «волна» по телу, чтобы змейка выглядела живой.
-      const bob = Math.sin(time * 6 - i * 0.6) * 0.04;
-      const scale = 1 - (i / n) * 0.25;
-      tmpMatrix.makeScale(scale, scale, scale).setPosition(p.x, 0.35 + bob, p.z);
-      this.snakeMesh.setMatrixAt(i - 1, tmpMatrix);
-      tmpColor.copy(head).lerp(tail, i / Math.max(n - 1, 1));
-      this.snakeMesh.setColorAt(i - 1, tmpColor);
+      p.y = 0.35 + (i === 0 ? 0 : Math.sin(time * 6 - i * 0.6) * 0.04);
+      p.scale = 1 - (i / n) * 0.25;
+      p.color = tmpColor.copy(head).lerp(tail, i / Math.max(n - 1, 1)).clone();
+      points.push(p);
     }
-    this.snakeMesh.instanceMatrix.needsUpdate = true;
-    if (this.snakeMesh.instanceColor) this.snakeMesh.instanceColor.needsUpdate = true;
+
+    this.snakeMesh.count = Math.max(0, n - 1);
+    for (let i = 1; i < n; i += 1) {
+      const p = points[i];
+      tmpMatrix.makeScale(p.scale, p.scale, p.scale).setPosition(p.x, p.y, p.z);
+      this.snakeMesh.setMatrixAt(i - 1, tmpMatrix);
+      this.snakeMesh.setColorAt(i - 1, p.color);
+    }
+
+    let joints = 0;
+    for (let i = 1; i < n; i += 1) {
+      const a = points[i - 1];
+      const b = points[i];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const dist = Math.hypot(dx, dz);
+      // На переходе сквозь стену соседние сегменты на разных краях поля — не соединяем.
+      if (dist < 0.05 || dist > 1.5) continue;
+      const s = (a.scale + b.scale) / 2;
+      tmpQuat.setFromAxisAngle(Y_AXIS, Math.atan2(-dz, dx));
+      tmpVec.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+      tmpScale.set(dist, s, s);
+      tmpMatrix.compose(tmpVec, tmpQuat, tmpScale);
+      this.jointMesh.setMatrixAt(joints, tmpMatrix);
+      this.jointMesh.setColorAt(joints, tmpColor.copy(a.color).lerp(b.color, 0.5));
+      joints += 1;
+    }
+    this.jointMesh.count = joints;
+
+    for (const mesh of [this.snakeMesh, this.jointMesh]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
 
     const opacity = ghost ? 0.4 + Math.sin(time * 12) * 0.15 : 1;
     this.snakeMaterial.opacity = opacity;
@@ -311,11 +353,19 @@ export class SceneRenderer {
           color: 0x4cc9f0, emissive: 0x4cc9f0, emissiveIntensity: 1.2,
         }));
         break;
-      case ITEM.GHOST:
-        add(new THREE.OctahedronGeometry(0.34), new THREE.MeshStandardMaterial({
-          color: 0xffffff, emissive: 0xc8d7ff, emissiveIntensity: 0.9, transparent: true, opacity: 0.7,
+      case ITEM.GHOST: {
+        add(new THREE.OctahedronGeometry(0.42), new THREE.MeshStandardMaterial({
+          color: 0xe8eeff, emissive: 0xb9c8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.85,
+          flatShading: true,
         }));
+        // Кольцо-ореол, чтобы бонус было видно издалека.
+        const halo = add(new THREE.TorusGeometry(0.5, 0.035, 8, 40), new THREE.MeshBasicMaterial({
+          color: 0xb9c8ff, transparent: true, opacity: 0.6,
+        }));
+        halo.rotation.x = Math.PI / 2;
+        halo.castShadow = false;
         break;
+      }
       default:
         break;
     }

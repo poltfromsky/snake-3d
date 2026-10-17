@@ -4,3 +4,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Записи геймплея — не для репозитория
+*.mp4
+*.mov
+*.webm
