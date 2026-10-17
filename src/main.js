@@ -223,15 +223,15 @@ function duelOver({ winner, reason }, scores, deathReasons) {
 
   let why = DUEL_REASONS[reason] ?? '';
   if (!['headOn', 'time'].includes(reason)) {
-    const loser = deathReasons.findIndex(Boolean);
-    if (loser >= 0) why = `${playerName(loser)}: ${DUEL_REASONS[deathReasons[loser]]}`;
+    const losers = [0, 1].filter((i) => deathReasons[i]);
+    if (losers.length === 2) why = 'Оба выбыли одновременно';
+    else if (losers.length === 1) why = `${playerName(losers[0])}: ${DUEL_REASONS[deathReasons[losers[0]]]}`;
   }
   $('#duel-title').textContent = title;
   $('#duel-reason').textContent = why;
   $('#duel-s0').textContent = `${playerName(0)} ${scores[0]}`;
   $('#duel-s1').textContent = `${scores[1]} ${playerName(1)}`;
   $('#duel-status').textContent = '';
-  rematchVotes.clear();
   setTimeout(() => { if (state === 'over') show('duel'); }, 900);
 }
 
