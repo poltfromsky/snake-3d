@@ -13,3 +13,7 @@ Thumbs.db
 # Сервер: локальные данные wrangler и секреты
 .wrangler/
 .dev.vars
+
+# Отчёты Playwright
+test-results/
+playwright-report/

@@ -56,8 +56,31 @@ jobs:
       - name: Сквозной тест онлайн-комнаты
         run: npm run test:e2e
 
+  browser-e2e:
+    # Настоящая игра в настоящем браузере (Playwright): одиночная, одна клавиатура,
+    # бот с достижением, онлайн в двух браузерах, отзыв. Ловит ошибки интерфейса.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: server
+      - name: Браузер для тестов
+        run: npx playwright install --with-deps chromium
+      - name: Секретная соль для локального сервера (своя на каждый прогон)
+        run: echo "IP_SALT=$(openssl rand -hex 32)" > server/.dev.vars
+      - name: Браузерные сценарии
+        run: npx playwright test
+
   deploy-server:
-    needs: [test, server-e2e]
+    needs: [test, server-e2e, browser-e2e]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production

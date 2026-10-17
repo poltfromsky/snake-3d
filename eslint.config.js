@@ -39,7 +39,7 @@ export default [
   },
   {
     // Скрипты и тесты, которые запускаются в Node.
-    files: ['tools/**/*.mjs', 'tests/**/*.js', 'server/test/**/*.mjs', 'eslint.config.js'],
+    files: ['tools/**/*.mjs', 'tests/**/*.js', 'server/test/**/*.mjs', 'e2e/**/*.js', 'eslint.config.js', 'playwright.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
 ];

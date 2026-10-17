@@ -20,6 +20,7 @@ import {
 } from './net/online.js';
 import { Leaderboard } from './net/leaderboard.js';
 import { API_BASE, APP_VERSION } from './config.js';
+import { exposeForTests } from './e2e.js';
 import {
   addRecord, isRecord, loadRecords, loadSettings, saveSettings, SPEED_FACTORS,
 } from './storage.js';
@@ -902,6 +903,12 @@ function renderBotButtons() {
 }
 
 renderBotButtons();
+// Только с ?e2e в адресе: доступ для браузерных автотестов (см. src/e2e.js).
+exposeForTests({
+  get kind() { return kind; },
+  get state() { return state; },
+  get game() { return game; },
+});
 markActive($('#mode-select'), 'mode', settings.mode);
 // Общая таблица и отзывы появляются, только когда подключена база.
 for (const el of document.querySelectorAll('.online-only')) {
