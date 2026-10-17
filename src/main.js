@@ -12,6 +12,8 @@ import { Duel } from './core/duel.js';
 import { SceneRenderer, THEMES } from './render/scene.js';
 import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
 import { normalizeRoomCode, OnlineLink, roomLink } from './net/online.js';
+import { Leaderboard } from './net/leaderboard.js';
+import { APP_VERSION, SUPABASE_ANON_KEY, SUPABASE_URL } from './config.js';
 import {
   addRecord, isRecord, loadRecords, loadSettings, saveSettings, SPEED_FACTORS,
 } from './storage.js';
@@ -49,6 +51,7 @@ const settings = loadSettings();
 const audio = new AudioManager();
 audio.setVolumes(settings);
 const renderer = new SceneRenderer($('#scene'));
+const leaderboard = new Leaderboard(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let kind = 'solo';
 let game = createGame();
@@ -116,7 +119,7 @@ function setupScene(view = currentView()) {
 
 /* ---------------- Экраны ---------------- */
 
-const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel'];
+const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback'];
 
 function show(name) {
   for (const s of screens) $(`#screen-${s}`).classList.toggle('hidden', s !== name);
@@ -186,13 +189,20 @@ function gameOver(reason) {
   $('#over-reason').textContent = REASONS[reason] ?? '';
   $('#over-score').textContent = game.score;
   const record = isRecord(settings.mode, game.score);
-  $('#record-form').classList.toggle('hidden', !record);
+  // В общую таблицу можно отправить любой ненулевой результат, даже не личный рекорд.
+  const canSave = record || (leaderboard.enabled && game.score > 0);
+  $('#record-form').classList.toggle('hidden', !canSave);
+  $('#record-label').textContent = record ? 'Новый рекорд! Ваше имя:' : 'Ваше имя для общей таблицы:';
+  $('#record-name').value = settings.playerName ?? '';
+  $('#record-comment').value = '';
+  $('#record-status').textContent = '';
+  $('#record-form button[type=submit]').disabled = false;
   if (record) setTimeout(() => audio.play('record'), 700);
   // Небольшая задержка, чтобы игрок увидел момент столкновения.
   setTimeout(() => {
     if (state !== 'over') return;
     show('over');
-    if (record) $('#record-name').focus();
+    if (canSave) $('#record-name').focus();
   }, 900);
 }
 
@@ -589,6 +599,13 @@ document.addEventListener('click', async (e) => {
       renderRecords(settings.mode);
       show('records');
       break;
+    case 'feedback':
+      previousScreen = 'menu';
+      $('#feedback-status').textContent = '';
+      $('#feedback-name').value = $('#feedback-name').value || (settings.playerName ?? '');
+      show('feedback');
+      $('#feedback-message').focus();
+      break;
     case 'settings':
       previousScreen = state === 'paused' ? 'pause' : 'menu';
       renderSettings();
@@ -632,28 +649,60 @@ $('#mode-select').addEventListener('click', (e) => {
 
 /* ---------------- Рекорды ---------------- */
 
-function renderRecords(mode) {
-  markActive($('#records-tabs'), 'mode', mode);
-  const list = loadRecords()[mode] ?? [];
+let recordsScope = leaderboard.enabled ? 'global' : 'local';
+let recordsMode = settings.mode;
+let recordsRequest = 0;
+
+function recordsMessage(text, className = 'empty') {
+  const li = document.createElement('li');
+  li.className = className;
+  li.textContent = text;
+  $('#records-list').replaceChildren(li);
+}
+
+function renderRecordRows(rows) {
   const ol = $('#records-list');
   ol.replaceChildren();
-  if (!list.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'Пока пусто — станьте первым!';
-    ol.append(li);
+  if (!rows.length) {
+    recordsMessage('Пока пусто — станьте первым!');
     return;
   }
-  for (const r of list) {
+  for (const r of rows) {
     const li = document.createElement('li');
     const name = document.createElement('span');
     name.textContent = r.name;
     const score = document.createElement('b');
     score.textContent = r.score;
     const meta = document.createElement('small');
-    meta.textContent = `длина ${r.length} · ${new Date(r.date).toLocaleDateString('ru-RU')}`;
+    const date = new Date(r.created_at ?? r.date).toLocaleDateString('ru-RU');
+    meta.textContent = `длина ${r.length} · ${date}`;
     li.append(name, score, meta);
+    if (r.comment) {
+      // textContent, а не innerHTML: комментарии пишут посторонние люди.
+      const comment = document.createElement('small');
+      comment.className = 'comment';
+      comment.textContent = `«${r.comment}»`;
+      li.append(comment);
+    }
     ol.append(li);
+  }
+}
+
+async function renderRecords(mode = recordsMode) {
+  recordsMode = mode;
+  markActive($('#records-tabs'), 'mode', mode);
+  markActive($('#records-scope'), 'scope', recordsScope);
+  if (recordsScope === 'local') {
+    renderRecordRows(loadRecords()[mode] ?? []);
+    return;
+  }
+  const request = ++recordsRequest;
+  recordsMessage('Загружаем…', 'loading');
+  try {
+    const rows = await leaderboard.top(mode);
+    if (request === recordsRequest) renderRecordRows(rows);
+  } catch {
+    if (request === recordsRequest) recordsMessage('Не удалось загрузить общую таблицу. Проверьте интернет.');
   }
 }
 
@@ -662,16 +711,78 @@ $('#records-tabs').addEventListener('click', (e) => {
   if (mode) renderRecords(mode);
 });
 
-$('#record-form').addEventListener('submit', (e) => {
+$('#records-scope').addEventListener('click', (e) => {
+  const scope = e.target.closest('button')?.dataset.scope;
+  if (!scope) return;
+  recordsScope = scope;
+  renderRecords();
+});
+
+$('#record-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const button = $('#record-form button[type=submit]');
+  if (button.disabled) return;
+  button.disabled = true;
   const name = $('#record-name').value.trim() || 'Игрок';
-  addRecord(settings.mode, {
-    name, score: game.score, length: game.length, date: Date.now(),
-  });
+  settings.playerName = name;
+  saveSettings(settings);
+  const entry = { name, score: game.score, length: game.length };
+  if (isRecord(settings.mode, game.score)) addRecord(settings.mode, { ...entry, date: Date.now() });
+
+  const toGlobal = leaderboard.enabled && $('#record-public').checked;
+  if (toGlobal) {
+    $('#record-status').textContent = 'Отправляем…';
+    try {
+      await leaderboard.submitRecord({ ...entry, mode: settings.mode, comment: $('#record-comment').value });
+    } catch {
+      $('#record-status').textContent = 'Не получилось отправить в общую таблицу — у вас результат сохранён.';
+      button.disabled = false;
+      return;
+    }
+  }
   $('#record-form').classList.add('hidden');
   previousScreen = 'menu';
+  recordsScope = toGlobal ? 'global' : 'local';
   renderRecords(settings.mode);
   show('records');
+});
+
+/* ---------------- Отзыв ---------------- */
+
+let feedbackRating = null;
+
+$('#feedback-rating').addEventListener('click', (e) => {
+  const value = e.target.closest('button')?.dataset.value;
+  if (!value) return;
+  feedbackRating = Number(value);
+  markActive($('#feedback-rating'), 'value', value);
+});
+
+$('#feedback-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const button = $('#feedback-form button[type=submit]');
+  const status = $('#feedback-status');
+  if (button.disabled) return;
+  if ($('#feedback-message').value.trim().length < 3) {
+    status.textContent = 'Напишите хотя бы пару слов.';
+    return;
+  }
+  button.disabled = true;
+  status.textContent = 'Отправляем…';
+  try {
+    await leaderboard.submitFeedback({
+      name: $('#feedback-name').value,
+      rating: feedbackRating,
+      message: $('#feedback-message').value,
+      version: APP_VERSION,
+    });
+    status.textContent = 'Спасибо! Отзыв отправлен.';
+    $('#feedback-message').value = '';
+  } catch {
+    status.textContent = 'Не получилось отправить. Проверьте интернет и попробуйте ещё раз.';
+  } finally {
+    button.disabled = false;
+  }
 });
 
 /* ---------------- Настройки ---------------- */
@@ -726,6 +837,10 @@ function renderCredits() {
 }
 
 markActive($('#mode-select'), 'mode', settings.mode);
+// Общая таблица и отзывы появляются, только когда подключена база.
+for (const el of document.querySelectorAll('.online-only')) {
+  el.classList.toggle('hidden', !leaderboard.enabled);
+}
 renderCredits();
 setupScene();
 show('menu');

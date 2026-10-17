@@ -47,7 +47,7 @@ html, body {
   user-select: none;
 }
 
-input { user-select: text; }
+input, textarea { user-select: text; }
 
 #scene {
   position: fixed;
@@ -273,7 +273,7 @@ h2 { font-size: 26px; }
 
 .record-form { display: flex; flex-direction: column; gap: 8px; text-align: left; font-size: 14px; }
 
-input:not([type]), input[type="text"] {
+input:not([type]), input[type="text"], textarea {
   min-width: 0;
   padding: 12px 14px;
   font: 15px Inter, sans-serif;
@@ -374,6 +374,34 @@ body.duel .solo-stat { display: none; }
 }
 
 .duel-score i { color: var(--muted); font-style: normal; }
+
+/* ---------- Общие рекорды и отзыв ---------- */
+textarea { resize: vertical; min-height: 96px; line-height: 1.4; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+.link-btn {
+  padding: 8px;
+  font-size: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+}
+
+.link-btn:hover { color: var(--text); background: none; }
+
+.records .comment { grid-column: 2 / -1; font-style: italic; color: var(--text); opacity: 0.8; font-size: 13px; }
+.records .loading { display: block; text-align: center; color: var(--muted); border: none; }
+.records .loading::before { content: none; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 

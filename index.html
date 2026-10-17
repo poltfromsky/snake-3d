@@ -56,6 +56,7 @@
         <button class="btn" data-action="records">Рекорды</button>
         <button class="btn" data-action="settings">Настройки</button>
       </div>
+      <button class="btn link-btn online-only hidden" data-action="feedback">💬 Оставить отзыв об игре</button>
       <p class="hint">←↑→↓ или WASD — поворот · Пробел/Esc — пауза · свайпы на телефоне</p>
       <div class="legend">
         <span><i class="dot apple"></i>яблоко +1</span>
@@ -85,11 +86,15 @@
       <p id="over-reason" class="subtitle"></p>
       <div class="big-score"><span id="over-score">0</span><small>очков</small></div>
       <form id="record-form" class="record-form hidden">
-        <label for="record-name">Новый рекорд! Ваше имя:</label>
-        <div class="row">
-          <input id="record-name" maxlength="16" autocomplete="nickname" placeholder="Игрок">
-          <button class="btn primary" type="submit">Сохранить</button>
-        </div>
+        <label for="record-name" id="record-label">Новый рекорд! Ваше имя:</label>
+        <input id="record-name" maxlength="16" autocomplete="nickname" placeholder="Игрок">
+        <input id="record-comment" class="online-only hidden" maxlength="200" autocomplete="off"
+          placeholder="Комментарий к рекорду (необязательно)" aria-label="Комментарий к рекорду">
+        <label class="check online-only hidden">
+          <input type="checkbox" id="record-public" checked> В общую таблицу — имя и комментарий увидят все
+        </label>
+        <button class="btn primary" type="submit">Сохранить</button>
+        <p id="record-status" class="status" aria-live="polite"></p>
       </form>
       <button class="btn primary" data-action="play">Ещё раз</button>
       <button class="btn" data-action="menu">В меню</button>
@@ -138,12 +143,40 @@
   <section id="screen-records" class="screen hidden">
     <div class="panel">
       <h2>Рекорды</h2>
+      <div class="segmented compact online-only hidden" id="records-scope">
+        <button data-scope="global">🌍 Общие</button>
+        <button data-scope="local">Мои</button>
+      </div>
       <div class="segmented" id="records-tabs">
         <button data-mode="classic">Классика</button>
         <button data-mode="walls">Стены</button>
         <button data-mode="timed">На время</button>
       </div>
       <ol id="records-list" class="records"></ol>
+      <button class="btn" data-action="back">Назад</button>
+    </div>
+  </section>
+
+  <!-- Отзыв -->
+  <section id="screen-feedback" class="screen hidden">
+    <div class="panel">
+      <h2>Отзыв об игре</h2>
+      <p class="subtitle">Что понравилось, что сломалось, чего не хватает? Отзыв увидит только автор игры.</p>
+      <form id="feedback-form" class="stack">
+        <div class="field">Оценка
+          <div class="segmented compact" id="feedback-rating" role="radiogroup" aria-label="Оценка">
+            <button type="button" data-value="1">1</button>
+            <button type="button" data-value="2">2</button>
+            <button type="button" data-value="3">3</button>
+            <button type="button" data-value="4">4</button>
+            <button type="button" data-value="5">5</button>
+          </div>
+        </div>
+        <textarea id="feedback-message" rows="5" maxlength="1000" placeholder="Ваш комментарий" aria-label="Комментарий" required></textarea>
+        <input id="feedback-name" maxlength="32" autocomplete="nickname" placeholder="Имя (необязательно)" aria-label="Имя">
+        <button class="btn primary" type="submit">Отправить</button>
+        <p id="feedback-status" class="status" aria-live="polite"></p>
+      </form>
       <button class="btn" data-action="back">Назад</button>
     </div>
   </section>
