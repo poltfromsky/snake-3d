@@ -1,0 +1,15 @@
+{
+  "name": "snake-3d",
+  "version": "1.0.0",
+  "description": "«Изгиб Питона 3D» — змейка на Three.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

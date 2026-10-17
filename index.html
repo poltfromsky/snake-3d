@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Изгиб Питона 3D</title>
+  <meta name="description" content="3D-змейка на Three.js: режимы, бонусы, рекорды.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Игровое поле"></canvas>
+
+  <!-- HUD во время игры -->
+  <header id="hud" class="hud hidden">
+    <div class="hud-stat"><span>Счёт</span><b id="hud-score">0</b></div>
+    <div class="hud-stat"><span>Длина</span><b id="hud-length">3</b></div>
+    <div class="hud-stat"><span>Уровень</span><b id="hud-level">1</b></div>
+    <div class="hud-stat hidden" id="hud-timer-box"><span>Время</span><b id="hud-timer">1:30</b></div>
+    <div id="hud-effects" class="hud-effects"></div>
+    <button id="btn-pause" class="icon-btn" aria-label="Пауза">❚❚</button>
+  </header>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <!-- Главное меню -->
+  <section id="screen-menu" class="screen">
+    <div class="panel">
+      <h1>Изгиб<br><span>Питона</span> 3D</h1>
+      <p class="subtitle">Классическая змейка в трёх измерениях</p>
+      <div class="segmented" id="mode-select" role="radiogroup" aria-label="Режим">
+        <button data-mode="classic" role="radio">Классика<small>сквозь стены</small></button>
+        <button data-mode="walls" role="radio">Стены<small>не врезаться</small></button>
+        <button data-mode="timed" role="radio">На время<small>90 секунд</small></button>
+      </div>
+      <button class="btn primary" data-action="play">Играть</button>
+      <div class="row">
+        <button class="btn" data-action="records">Рекорды</button>
+        <button class="btn" data-action="settings">Настройки</button>
+      </div>
+      <p class="hint">←↑→↓ или WASD — поворот · Пробел/Esc — пауза · свайпы на телефоне</p>
+      <div class="legend">
+        <span><i class="dot apple"></i>яблоко +1</span>
+        <span><i class="dot bad"></i>гниль −1</span>
+        <span><i class="dot slow"></i>замедление</span>
+        <span><i class="dot ghost"></i>призрак</span>
+        <span><i class="dot stone"></i>камень</span>
+      </div>
+      <p class="credits" id="music-credits"></p>
+    </div>
+  </section>
+
+  <!-- Пауза -->
+  <section id="screen-pause" class="screen hidden">
+    <div class="panel small">
+      <h2>Пауза</h2>
+      <button class="btn primary" data-action="resume">Продолжить</button>
+      <button class="btn" data-action="settings">Настройки</button>
+      <button class="btn" data-action="menu">В меню</button>
+    </div>
+  </section>
+
+  <!-- Конец игры -->
+  <section id="screen-over" class="screen hidden">
+    <div class="panel small">
+      <h2 id="over-title">Игра окончена</h2>
+      <p id="over-reason" class="subtitle"></p>
+      <div class="big-score"><span id="over-score">0</span><small>очков</small></div>
+      <form id="record-form" class="record-form hidden">
+        <label for="record-name">Новый рекорд! Ваше имя:</label>
+        <div class="row">
+          <input id="record-name" maxlength="16" autocomplete="nickname" placeholder="Игрок">
+          <button class="btn primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+      <button class="btn primary" data-action="play">Ещё раз</button>
+      <button class="btn" data-action="menu">В меню</button>
+    </div>
+  </section>
+
+  <!-- Рекорды -->
+  <section id="screen-records" class="screen hidden">
+    <div class="panel">
+      <h2>Рекорды</h2>
+      <div class="segmented" id="records-tabs">
+        <button data-mode="classic">Классика</button>
+        <button data-mode="walls">Стены</button>
+        <button data-mode="timed">На время</button>
+      </div>
+      <ol id="records-list" class="records"></ol>
+      <button class="btn" data-action="back">Назад</button>
+    </div>
+  </section>
+
+  <!-- Настройки -->
+  <section id="screen-settings" class="screen hidden">
+    <div class="panel">
+      <h2>Настройки</h2>
+      <label class="field">Музыка <input type="range" id="set-music" min="0" max="1" step="0.05"></label>
+      <label class="field">Эффекты <input type="range" id="set-sfx" min="0" max="1" step="0.05"></label>
+      <div class="field">Скорость
+        <div class="segmented compact" id="set-speed">
+          <button data-value="slow">Медленно</button>
+          <button data-value="normal">Норма</button>
+          <button data-value="fast">Быстро</button>
+        </div>
+      </div>
+      <div class="field">Тема
+        <div class="segmented compact" id="set-theme">
+          <button data-value="neon">Неон</button>
+          <button data-value="forest">Лес</button>
+          <button data-value="sunset">Закат</button>
+        </div>
+      </div>
+      <div class="field">Камера
+        <div class="segmented compact" id="set-camera">
+          <button data-value="angled">Под углом</button>
+          <button data-value="top">Сверху</button>
+        </div>
+      </div>
+      <button class="btn" data-action="back">Готово</button>
+    </div>
+  </section>
+
+  <noscript>Для игры нужен JavaScript.</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
