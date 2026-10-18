@@ -36,16 +36,27 @@ export class Leaderboard {
     }
   }
 
-  /** Топ-10 по режиму. */
+  /** Топ-10 по режиму: по одной строке на ник — его лучший результат. */
   async top(mode) {
     if (!RECORD_MODES.includes(mode)) return [];
     return this.request(`records?mode=${encodeURIComponent(mode)}`);
   }
 
+  /** Место ника в общей таблице: {place, score, length} или null, если он туда ещё не попадал. */
+  async place(mode, name) {
+    if (!RECORD_MODES.includes(mode) || !name) return null;
+    return this.request(`records/place?mode=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`);
+  }
+
+  /**
+   * Отправить результат. Сервер хранит у ника только лучший.
+   * @returns {Promise<{improved: boolean, best: number}>} improved — записан ли этот результат
+   */
   async submitRecord(entry) {
     const record = buildRecord(entry);
     if (!record) throw new Error('Некорректный рекорд.');
-    await this.request('records', { method: 'POST', body: record });
+    const data = await this.request('records', { method: 'POST', body: record });
+    return { improved: data.improved !== false, best: Number(data.best) || record.score };
   }
 
   async submitFeedback(entry) {

@@ -25,6 +25,7 @@ import { $, markActive, toast } from './ui/dom.js';
 import { createFeedbackScreen } from './ui/feedback-screen.js';
 import { createOnlineLobby } from './ui/online-lobby.js';
 import { createRecordsScreen } from './ui/records-screen.js';
+import { createResultSaver } from './ui/result-saver.js';
 import { duelSummary, soloSummary } from './ui/results.js';
 import {
   renderCredits, renderHud, showScreen, showTimer,
@@ -180,9 +181,10 @@ function soloOver(reason) {
   $('#over-title').textContent = text.title;
   $('#over-reason').textContent = text.reason;
   $('#over-score').textContent = game.score;
-  const { canSave, record } = records.offer({ score: game.score, length: game.length });
-  if (record) setTimeout(() => audio.play('record'), 700);
-  showLater('over', () => { if (canSave) $('#record-name').focus(); });
+  const { needsForm, isBest } = saver.finish({ mode: settings.mode, score: game.score, length: game.length });
+  if (isBest) setTimeout(() => audio.play('record'), 700);
+  // На телефоне не ставим курсор в поле ника: выскочившая клавиатура закрыла бы итоги.
+  showLater('over', () => { if (needsForm && !isTouchDevice()) $('#record-name').focus(); });
 }
 
 /** Подписи экрана итогов дуэли по последнему результату и текущим именам игроков. */
@@ -345,8 +347,15 @@ function handleNetMessage(msg, connection) {
 
 /* ---------------- Экраны ---------------- */
 
-const records = createRecordsScreen({
-  settings, leaderboard, show, setBack: (name) => { backTo = name; },
+const records = createRecordsScreen({ settings, leaderboard });
+const saver = createResultSaver({
+  settings,
+  leaderboard,
+  onChangeNick: () => {
+    backTo = 'over';
+    settingsScreen.render();
+    show('settings');
+  },
 });
 const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, settings });
 const settingsScreen = createSettingsScreen({
@@ -497,6 +506,7 @@ const ACTIONS = {
   back: () => {
     if (backTo === 'menu') toMenu();
     else show(backTo);
+    if (backTo === 'over') saver.refreshName();
   },
 };
 
@@ -525,6 +535,8 @@ const updater = registerServiceWorker({
 });
 
 renderBotButtons(achievements);
+// Рекорды, которые раньше не ушли в общую таблицу (не было сети), — отправляем сейчас.
+saver.flushPending();
 // Только с ?e2e в адресе: доступ для браузерных автотестов (см. src/e2e.js).
 exposeForTests({
   get kind() { return mode.kind; },

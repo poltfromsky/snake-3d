@@ -316,6 +316,34 @@ input:not([type]), input[type="text"], textarea {
 .records li b { font-variant-numeric: tabular-nums; }
 .records li small { grid-column: 2 / -1; color: var(--muted); font-size: 12px; }
 .records .empty { display: block; text-align: center; color: var(--muted); border: none; }
+/* Своя строка в общей таблице и лучшая попытка в истории — подсвечены. */
+.records li.me, .records li.best { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.records li.best b { color: var(--accent); }
+/* История попыток: без номеров мест. */
+.records.history li::before { content: none; }
+.records.history li { grid-template-columns: 1fr auto; }
+
+.records-me {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 12px;
+}
+.records-me b { color: var(--accent); }
+
+.record-auto { display: flex; flex-direction: column; gap: 6px; }
+.record-auto-title { margin: 0; font-weight: 600; color: var(--accent); }
+.record-auto .hint { margin: 0; }
+.text-btn {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
 .records .empty::before { content: none; }
 
 /* ---------- Настройки ---------- */

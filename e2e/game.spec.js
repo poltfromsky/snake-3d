@@ -131,7 +131,7 @@ test('отзыв уходит на сервер и игрок видит отв�
   expect(errors).toEqual([]);
 });
 
-test('ник вводится один раз: из настроек он попадает в рекорд и отзыв и переживает перезагрузку', async ({ page }) => {
+test('ник вводится один раз: из настроек — в итоги партии без формы и в отзыв, переживает перезагрузку', async ({ page }) => {
   const errors = await openGame(page);
   await page.locator('#screen-menu [data-action="settings"]').click();
   await page.locator('#set-name').pressSequentially('Питон');
@@ -143,7 +143,12 @@ test('ник вводится один раз: из настроек он поп
   // Очки, чтобы результат можно было сохранить; дальше змейка сама врежется в стену.
   await page.evaluate(() => { globalThis.__snakeE2E.game.score = 5; });
   await expect(page.locator('#screen-over')).toBeVisible();
-  await expect(page.locator('#record-name')).toHaveValue('Питон');
+  // Ник уже есть — формы нет: попытка сохранена сама, ник показан, рекорд можно отправить кнопкой.
+  await expect(page.locator('#record-form')).toBeHidden();
+  await expect(page.locator('#record-auto')).toBeVisible();
+  await expect(page.locator('#record-auto-name')).toHaveText('Питон');
+  await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+  await expect(page.locator('#btn-publish')).toBeVisible();
 
   await page.locator('#screen-over [data-action="menu"]').click();
   await page.locator('[data-action="feedback"]').click();
@@ -165,4 +170,86 @@ test('браузер без 3D видит объяснение, а не мёрт
   await expect(page.locator('#screen-no3d')).toBeVisible();
   await expect(page.locator('#screen-menu')).toBeHidden();
   expect(errors).toEqual([]);
+});
+
+/**
+ * Свой «адрес» на каждую отправку рекорда: иначе сработает ограничение частоты (в бою его ставит Cloudflare).
+ * Запрос отправляет сам Playwright и отдаёт ответ браузеру.
+ */
+async function uniqueSenderForRecords(page) {
+  let n = 0;
+  const base = `10.${Date.now() % 250}.${Math.floor(Math.random() * 250)}`;
+  await page.route('**/api/records', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    n += 1;
+    const response = await route.fetch({ headers: { ...route.request().headers(), 'cf-connecting-ip': `${base}.${n}` } });
+    return route.fulfill({ response });
+  });
+}
+
+/**
+ * Сыграть одиночную партию примерно с заданным счётом: змейка сама врежется в стену («Стены»).
+ * Возвращает итоговый счёт с экрана: по пути змейка может успеть съесть яблоко (+10).
+ */
+async function playSolo(page, score, start = '#screen-menu [data-action="play"]') {
+  await page.locator(start).click();
+  await expect.poll(() => page.evaluate(() => globalThis.__snakeE2E.state)).toBe('playing');
+  await page.evaluate((s) => { globalThis.__snakeE2E.game.score = s; }, score);
+  await expect(page.locator('#screen-over')).toBeVisible();
+  return Number(await page.locator('#over-score').textContent());
+}
+
+test.describe('рекорды', () => {
+  // Без service worker: в WebKit запросы через него идут мимо перехвата Playwright,
+  // а для рекордов он ни при чём (сервер — другой адрес, мимо кэша).
+  test.use({ serviceWorkers: 'block' });
+
+  test('автоотправка: в общей таблице одна строка на ник — лучший результат, в «Мои» — все попытки', async ({ page }, testInfo) => {
+    const nick = `Тест${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const errors = await openGame(page, { playerName: nick, autoSubmit: 'on' });
+    await uniqueSenderForRecords(page);
+
+    const first = await playSolo(page, 300);
+    await expect(page.locator('#record-auto-status')).toHaveText(`В общей таблице: ${nick} — ${first}`);
+    await expect(page.locator('#btn-publish')).toBeHidden();
+
+    // Хуже прошлого — не личный рекорд: в таблицу не отправляется, только в историю.
+    await playSolo(page, 100, '#screen-over [data-action="play"]');
+    await expect(page.locator('#record-auto-title')).toHaveText(`Ваш лучший результат: ${first}`);
+    await expect(page.locator('#record-auto-status')).toHaveText('');
+
+    const best = await playSolo(page, 600, '#screen-over [data-action="play"]');
+    await expect(page.locator('#record-auto-status')).toHaveText(`В общей таблице: ${nick} — ${best}`);
+
+    await page.locator('#screen-over [data-action="menu"]').click();
+    await page.locator('#screen-menu [data-action="records"]').click();
+    await page.locator('#records-tabs [data-mode="walls"]').click();
+    await page.locator('#records-scope [data-scope="global"]').click();
+    // У ника в общей таблице одна строка — лучшая; своё место видно и вне топ-10.
+    await expect(page.locator('#records-me')).toContainText(`Ваш лучший результат в общей таблице: ${best}`);
+    expect(await page.locator('#records-list li.me').count()).toBeLessThanOrEqual(1);
+
+    await page.locator('#records-scope [data-scope="local"]').click();
+    await expect(page.locator('#records-list li')).toHaveCount(3);
+    await expect(page.locator('#records-list li.best b')).toHaveText(`★ ${best}`);
+    await expect(page.locator('#records-me')).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+
+  test('без ника форма появляется один раз, дальше ник подставляется сам', async ({ page }) => {
+    const errors = await openGame(page);
+    await uniqueSenderForRecords(page);
+    await playSolo(page, 15);
+    await expect(page.locator('#record-form')).toBeVisible();
+    await page.locator('#record-public').uncheck();
+    await page.locator('#record-name').fill('Удав');
+    await page.locator('#record-form button[type="submit"]').click();
+    await expect(page.locator('#record-form')).toBeHidden();
+    await expect(page.locator('#record-auto-name')).toHaveText('Удав');
+
+    await playSolo(page, 500, '#screen-over [data-action="play"]');
+    await expect(page.locator('#record-form')).toBeHidden();
+    await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+    expect(errors).toEqual([]);
+  });
 });

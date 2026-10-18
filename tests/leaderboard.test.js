@@ -51,3 +51,12 @@ test('текст ошибки сервера доходит до игрока', 
     /Слишком часто/,
   );
 });
+
+test('submitRecord сообщает, записан ли результат: у ника хранится только лучший', async () => {
+  const replies = [{ ok: true, improved: true, best: 70 }, { ok: true, improved: false, best: 70 }];
+  const fakeFetch = async () => ({ ok: true, json: async () => replies.shift() });
+  const lb = new Leaderboard('https://api.example', fakeFetch);
+  const entry = { name: 'Питон', mode: 'walls', score: 70, length: 9 };
+  assert.deepEqual(await lb.submitRecord(entry), { improved: true, best: 70 });
+  assert.deepEqual(await lb.submitRecord({ ...entry, score: 40 }), { improved: false, best: 70 });
+});

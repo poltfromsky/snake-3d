@@ -20,6 +20,7 @@ export function createSettingsScreen({ settings, audio, hooks }) {
     markActive($('#set-theme'), 'value', settings.theme);
     markActive($('#set-camera'), 'value', settings.camera);
     markActive($('#set-controls'), 'value', settings.controls);
+    markActive($('#set-autosubmit'), 'value', settings.autoSubmit);
   }
 
   function bindSegmented(id, key, onChange) {
@@ -37,6 +38,7 @@ export function createSettingsScreen({ settings, audio, hooks }) {
   bindSegmented('#set-theme', 'theme', () => hooks.onTheme());
   bindSegmented('#set-camera', 'camera', (v) => hooks.onCamera(v));
   bindSegmented('#set-controls', 'controls', (v) => hooks.onControls(v));
+  bindSegmented('#set-autosubmit', 'autoSubmit', () => {});
 
   for (const [id, key] of [['#set-music', 'musicVolume'], ['#set-sfx', 'sfxVolume']]) {
     $(id).addEventListener('input', (e) => {

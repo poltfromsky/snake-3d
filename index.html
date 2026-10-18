@@ -138,16 +138,31 @@
       <p id="over-reason" class="subtitle"></p>
       <div class="big-score"><span id="over-score">0</span><small>очков</small></div>
       <form id="record-form" class="record-form hidden">
-        <label for="record-name" id="record-label">Новый рекорд! Ваше имя:</label>
-        <input id="record-name" maxlength="16" autocomplete="nickname" placeholder="Игрок">
+        <label for="record-name" id="record-label">Новый рекорд! Ваш ник:</label>
+        <input id="record-name" maxlength="16" autocomplete="nickname" placeholder="Ник — спросим один раз">
         <input id="record-comment" class="online-only hidden" maxlength="200" autocomplete="off"
           placeholder="Комментарий к рекорду (необязательно)" aria-label="Комментарий к рекорду">
         <label class="check online-only hidden">
-          <input type="checkbox" id="record-public" checked> В общую таблицу — имя и комментарий увидят все
+          <input type="checkbox" id="record-public" checked> В общую таблицу — ник и комментарий увидят все
         </label>
         <button class="btn primary" type="submit">Сохранить</button>
         <p id="record-status" class="status" aria-live="polite"></p>
       </form>
+      <!-- Ник уже есть: без формы. Попытка сохранена, личный рекорд — в общую таблицу кнопкой или сам. -->
+      <div id="record-auto" class="record-auto hidden">
+        <p id="record-auto-title" class="record-auto-title"></p>
+        <p class="hint">Попытка сохранена в «Мои» · ник <b id="record-auto-name"></b> ·
+          <button type="button" class="text-btn" id="btn-change-nick">сменить</button></p>
+        <div id="record-publish" class="stack hidden">
+          <input id="record-auto-comment" class="hidden" maxlength="200" autocomplete="off"
+            placeholder="Комментарий к рекорду (необязательно)" aria-label="Комментарий к рекорду">
+          <div class="row">
+            <button type="button" class="btn" id="btn-publish">🌍 В общую таблицу</button>
+            <button type="button" class="btn" id="btn-add-comment">💬 Комментарий</button>
+          </div>
+        </div>
+        <p id="record-auto-status" class="status" aria-live="polite"></p>
+      </div>
       <button class="btn primary" data-action="play">Ещё раз</button>
       <button class="btn" data-action="menu">В меню</button>
     </div>
@@ -246,6 +261,7 @@
         <button data-mode="timed">На время</button>
       </div>
       <ol id="records-list" class="records"></ol>
+      <p id="records-me" class="records-me hidden" aria-live="polite"></p>
       <button class="btn" data-action="back">Назад</button>
     </div>
   </section>
@@ -301,6 +317,12 @@
         <div class="segmented compact" id="set-camera">
           <button data-value="angled">Под углом</button>
           <button data-value="top">Сверху</button>
+        </div>
+      </div>
+      <div class="field online-only hidden">Рекорды в общую таблицу
+        <div class="segmented compact" id="set-autosubmit">
+          <button data-value="off">По кнопке</button>
+          <button data-value="on">Автоматически</button>
         </div>
       </div>
       <div class="field touch-only">Управление

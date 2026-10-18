@@ -25,6 +25,14 @@ export function cleanText(value, max) {
     .slice(0, max);
 }
 
+/**
+ * Ключ ника: «Polt», «polt» и « polt » — один игрок. В общей таблице у каждого ключа
+ * одна строка — лучший результат.
+ */
+export function nameKey(name) {
+  return cleanText(name, LIMITS.name).toLowerCase();
+}
+
 /** Готовит рекорд к сохранению или возвращает null, если он некорректен. */
 export function buildRecord({ name, mode, score, length, comment } = {}) {
   const cleanName = cleanText(name, LIMITS.name);

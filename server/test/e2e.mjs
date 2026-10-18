@@ -66,6 +66,34 @@ b.send({ t: 'rematch' });
 await a.waitFor((m) => m.t === 'round' && a.log.filter((x) => x.t === 'round').length >= 2);
 console.log('✔ реванш начался');
 
+// Общая таблица: у ника одна строка — его лучший результат.
+// Свой «адрес» на каждую отправку — иначе сработает ограничение частоты.
+const nick = `e2e${Date.now().toString(36).slice(-6)}`;
+let fakeIp = 0;
+const submit = async (name, score) => {
+  fakeIp += 1;
+  const r = await fetch(`${B}/api/records`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${fakeIp}` },
+    body: JSON.stringify({ name, mode: 'timed', score, length: 5 }),
+  });
+  assert.ok(r.ok, `POST /api/records → ${r.status}`);
+  return r.json();
+};
+const rowsOf = async () => (await (await fetch(`${B}/api/records?mode=timed`)).json())
+  .filter((row) => row.name.toLowerCase() === nick);
+assert.equal((await submit(nick, 40)).improved, true);
+assert.deepEqual(await submit(nick, 30), { ok: true, improved: false, best: 40 });
+assert.equal((await submit(nick.toUpperCase(), 55)).improved, true, 'ник без учёта регистра');
+const mine = await rowsOf();
+assert.equal(mine.length, 1, 'одна строка на ник');
+assert.equal(mine[0].score, 55);
+const place = await (await fetch(`${B}/api/records/place?mode=timed&name=${encodeURIComponent(nick)}`)).json();
+assert.equal(place.score, 55);
+assert.ok(Number.isInteger(place.place) && place.place >= 1, 'место в таблице');
+assert.equal(await (await fetch(`${B}/api/records/place?mode=timed&name=nobody-${nick}`)).json(), null);
+console.log('✔ общая таблица: одна строка на ник, обновляется только лучшим результатом');
+
 const ghost = client('ZZZZZ', 'ghost');
 const gerr = await ghost.waitFor((m) => m.t === 'error');
 console.log('✔ несуществующая комната:', gerr.text);

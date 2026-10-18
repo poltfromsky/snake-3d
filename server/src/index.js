@@ -3,12 +3,16 @@
  *
  *   POST /api/rooms                 — создать комнату {mode, speed} → {code}
  *   GET  /api/rooms/:code/ws        — WebSocket игрока (Durable Object Room)
- *   GET  /api/records?mode=classic  — топ-10 общей таблицы
- *   POST /api/records               — добавить рекорд
+ *   GET  /api/records?mode=classic  — топ-10 общей таблицы (по строке на ник)
+ *   GET  /api/records/place?mode=classic&name=… — место и лучший результат ника {place, score, length} или null
+ *   POST /api/records               — рекорд игрока: в таблице одна строка на ник,
+ *                                     обновляется, только если результат лучше
  *   POST /api/feedback              — оставить отзыв (читает только владелец, в D1)
  *   GET  /api/health                — проверка, что сервер жив
  */
-import { buildFeedback, buildRecord, RECORD_MODES } from '../../src/core/validate.js';
+import {
+  buildFeedback, buildRecord, nameKey, RECORD_MODES,
+} from '../../src/core/validate.js';
 
 export { Room } from './room.js';
 
@@ -92,12 +96,43 @@ async function createRoom(request, env) {
 async function topRecords(request, env, url) {
   const mode = url.searchParams.get('mode');
   if (!RECORD_MODES.includes(mode)) return json({ error: 'unknown mode' }, 400, request, env);
+  // По одной строке на ник — его лучший результат (при равенстве — самый ранний).
+  // Старые записи до миграции 0002 могли повторять ник — они отсеиваются здесь же.
   const { results } = await env.DB
-    .prepare(`SELECT name, score, length, comment, created_at FROM records
-              WHERE mode = ? ORDER BY score DESC, created_at ASC LIMIT 10`)
+    .prepare(`SELECT name, score, length, comment, created_at FROM (
+                SELECT name, score, length, comment, created_at,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY COALESCE(name_key, lower(trim(name)))
+                         ORDER BY score DESC, created_at ASC
+                       ) AS place
+                FROM records WHERE mode = ?
+              ) WHERE place = 1
+              ORDER BY score DESC, created_at ASC LIMIT 10`)
     .bind(mode)
     .all();
   return json(results, 200, request, env);
+}
+
+/** Место ника в общей таблице: игрок видит себя, даже если он не в топ-10. */
+async function placeOf(request, env, url) {
+  const mode = url.searchParams.get('mode');
+  const key = nameKey(url.searchParams.get('name'));
+  if (!RECORD_MODES.includes(mode) || !key) return json({ error: 'unknown mode or name' }, 400, request, env);
+  const row = await env.DB
+    .prepare(`WITH best AS (
+                SELECT COALESCE(name_key, lower(trim(name))) AS k, score, length, created_at,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY COALESCE(name_key, lower(trim(name)))
+                         ORDER BY score DESC, created_at ASC
+                       ) AS n
+                FROM records WHERE mode = ?
+              ), ranked AS (
+                SELECT k, score, length, RANK() OVER (ORDER BY score DESC) AS place FROM best WHERE n = 1
+              )
+              SELECT place, score, length FROM ranked WHERE k = ?`)
+    .bind(mode, key)
+    .first();
+  return json(row ?? null, 200, request, env);
 }
 
 async function addRecord(request, env) {
@@ -107,11 +142,30 @@ async function addRecord(request, env) {
   if (await tooSoon(env, 'records', hash, RECORD_COOLDOWN_S)) {
     return json({ error: 'Слишком часто. Попробуйте через полминуты.' }, 429, request, env);
   }
-  await env.DB
-    .prepare('INSERT INTO records (name, mode, score, length, comment, client_hash) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(record.name, record.mode, record.score, record.length, record.comment, hash)
-    .run();
-  return json({ ok: true }, 201, request, env);
+  const key = nameKey(record.name);
+  const best = await env.DB
+    .prepare(`SELECT id, score FROM records WHERE mode = ? AND COALESCE(name_key, lower(trim(name))) = ?
+              ORDER BY score DESC, created_at ASC LIMIT 1`)
+    .bind(record.mode, key)
+    .first();
+  // Результат не лучше уже записанного — таблицу не трогаем, игроку сообщаем его лучший.
+  if (best && record.score <= best.score) {
+    return json({ ok: true, improved: false, best: best.score }, 200, request, env);
+  }
+  if (best) {
+    // Новый лучший результат ника: обновляем его строку. Комментарий — новый, а если его нет, старый.
+    await env.DB
+      .prepare(`UPDATE records SET name = ?, name_key = ?, score = ?, length = ?, comment = COALESCE(?, comment),
+                client_hash = ?, created_at = datetime('now') WHERE id = ?`)
+      .bind(record.name, key, record.score, record.length, record.comment, hash, best.id)
+      .run();
+  } else {
+    await env.DB
+      .prepare('INSERT INTO records (name, name_key, mode, score, length, comment, client_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(record.name, key, record.mode, record.score, record.length, record.comment, hash)
+      .run();
+  }
+  return json({ ok: true, improved: true, best: record.score }, best ? 200 : 201, request, env);
 }
 
 async function addFeedback(request, env) {
@@ -150,6 +204,7 @@ export default {
       if (url.pathname === '/api/health') return json({ ok: true }, 200, request, env);
       if (url.pathname === '/api/rooms' && request.method === 'POST') return await createRoom(request, env);
       if (url.pathname === '/api/records' && request.method === 'GET') return await topRecords(request, env, url);
+      if (url.pathname === '/api/records/place' && request.method === 'GET') return await placeOf(request, env, url);
       if (url.pathname === '/api/records' && request.method === 'POST') return await addRecord(request, env);
       if (url.pathname === '/api/feedback' && request.method === 'POST') return await addFeedback(request, env);
     } catch (err) {

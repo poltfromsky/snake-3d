@@ -8,8 +8,10 @@
 import { cleanText, LIMITS } from './core/validate.js';
 
 const SETTINGS_KEY = 'snake3d.settings.v1';
-const RECORDS_KEY = 'snake3d.records.v1';
-const MAX_RECORDS = 10;
+const RECORDS_KEY = 'snake3d.records.v1'; // до версии 1.6: топ-10 на устройстве (переносится в историю)
+const HISTORY_KEY = 'snake3d.history.v1';
+const PENDING_KEY = 'snake3d.pending.v1';
+const MAX_HISTORY = 100;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   musicVolume: 0.5,
@@ -18,6 +20,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'neon', // neon | forest | sunset
   camera: 'angled', // angled | top
   controls: 'swipe', // swipe | buttons — управление на сенсорном экране
+  autoSubmit: 'off', // on | off — сам отправлять личный рекорд в общую таблицу
   mode: 'classic',
   playerName: '', // один ник на всю игру: рекорды, отзыв, онлайн
 });
@@ -60,23 +63,64 @@ export function setPlayerName(settings, raw) {
   return name;
 }
 
-/** Рекорды по режимам: { classic: [{name, score, length, date}], ... } */
-export function loadRecords() {
-  return read(RECORDS_KEY, {});
+/**
+ * История попыток по режимам, новые сверху: { classic: [{score, length, date}], ... }.
+ * Это «Мои» на экране рекордов. В общей таблице у ника — только лучший результат.
+ */
+export function loadHistory() {
+  const history = read(HISTORY_KEY, null);
+  if (history) return history;
+  // Первый запуск после обновления: прежние рекорды на устройстве становятся началом истории.
+  const seeded = {};
+  for (const [mode, list] of Object.entries(read(RECORDS_KEY, {}))) {
+    if (!Array.isArray(list)) continue;
+    seeded[mode] = list
+      .map(({ score, length, date }) => ({ score, length, date }))
+      .sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
+  }
+  return seeded;
 }
 
-export function isRecord(mode, score) {
-  if (score <= 0) return false;
-  const list = loadRecords()[mode] ?? [];
-  return list.length < MAX_RECORDS || score > list.at(-1).score;
+/** Лучший результат на этом устройстве в режиме (0, если попыток не было). */
+export function personalBest(mode) {
+  return (loadHistory()[mode] ?? []).reduce((best, a) => Math.max(best, a.score), 0);
 }
 
-export function addRecord(mode, entry) {
-  const records = loadRecords();
-  const list = [...(records[mode] ?? []), entry]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_RECORDS);
-  records[mode] = list;
-  write(RECORDS_KEY, records);
-  return list.indexOf(entry);
+/**
+ * Записывает попытку в историю. Возвращает true, если побит личный рекорд.
+ * История ограничена MAX_HISTORY попытками, но лучшая из них не вытесняется никогда.
+ */
+export function addAttempt(mode, { score, length, date = Date.now() }) {
+  const before = personalBest(mode);
+  const history = loadHistory();
+  let list = [{ score, length, date }, ...(history[mode] ?? [])];
+  if (list.length > MAX_HISTORY) {
+    const top = list.reduce((a, b) => (b.score > a.score ? b : a));
+    list = list.slice(0, MAX_HISTORY);
+    if (!list.includes(top)) list[MAX_HISTORY - 1] = top;
+  }
+  history[mode] = list;
+  write(HISTORY_KEY, history);
+  return score > 0 && score > before;
+}
+
+/**
+ * Рекорды, которые не удалось отправить в общую таблицу (нет сети, слишком часто).
+ * По одному на режим — самый лучший; отправляются при следующей возможности.
+ */
+export function loadPending() {
+  return read(PENDING_KEY, {});
+}
+
+export function savePending(entry) {
+  const pending = loadPending();
+  if (!pending[entry.mode] || pending[entry.mode].score < entry.score) pending[entry.mode] = entry;
+  write(PENDING_KEY, pending);
+}
+
+export function clearPending(mode, score) {
+  const pending = loadPending();
+  // Пока отправляли, мог появиться рекорд ещё лучше — его не трогаем.
+  if (pending[mode] && pending[mode].score <= score) delete pending[mode];
+  write(PENDING_KEY, pending);
 }
