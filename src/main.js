@@ -41,6 +41,8 @@ import { createTutorialUI } from './ui/tutorial-ui.js';
 
 const { MENU, LOBBY, COUNTDOWN, PLAYING, PAUSED, OVER } = STATES;
 
+const TUTORIAL_THEME = 'neon';
+
 const ARROWS = {
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
 };
@@ -104,13 +106,35 @@ function createSolo() {
 function setMode(next) {
   if (next !== mode) mode.dispose();
   mode = next;
+  if (mode.kind !== 'tutorial') renderer.setInsets(0, 0);
 }
+
+/**
+ * Обучение: карточка с заданием сверху и кнопки-стрелки снизу не должны закрывать поле —
+ * оно рисуется в оставшейся между ними области.
+ */
+function fitSceneToTutorial() {
+  if (mode.kind !== 'tutorial') return;
+  const card = $('#tutorial-card');
+  if (card.classList.contains('hidden')) return; // на паузе поле остаётся на месте
+  const dpad = $('#dpad');
+  const top = card.getBoundingClientRect().bottom + 8;
+  const bottom = dpad.classList.contains('hidden') ? 0 : window.innerHeight - dpad.getBoundingClientRect().top + 8;
+  renderer.setInsets(top, bottom);
+}
+
+/**
+ * Тема на экране. Обучение всегда в «Неоне»: цвет яблока зависит от темы
+ * (в «Закате» оно бирюзовое), а текст обучения говорит «красное яблоко».
+ */
+const activeTheme = () => (mode.kind === 'tutorial' ? TUTORIAL_THEME : settings.theme);
 
 /** Пересобирает сцену и подстраивает цвета интерфейса под тему. */
 function setupScene() {
-  document.documentElement.dataset.theme = settings.theme;
+  const theme = activeTheme();
+  document.documentElement.dataset.theme = theme;
   const { view } = mode;
-  if (view) renderer.setup(view, settings, mode.myIndex);
+  if (view) renderer.setup(view, { ...settings, theme }, mode.myIndex);
 }
 
 function show(name) {
@@ -136,7 +160,7 @@ function beginPlaying() {
   showTimer(mode.timed);
   audio.startMusic();
   lastTime = performance.now();
-  renderHud(mode, settings.theme);
+  renderHud(mode, activeTheme());
 }
 
 /** Начать партию в новом режиме. create — фабрика режима, она же нужна для реванша. */
@@ -243,7 +267,6 @@ function startTutorial() {
   tutorial.shown = true;
   saveTutorial(tutorial);
   play(() => new TutorialMode({
-    narrow: window.innerWidth < window.innerHeight,
     // «Вверх по экрану» на повёрнутом поле — другое направление поля.
     screenUp: () => renderer.toFieldDirection('UP'),
   }));
@@ -333,7 +356,7 @@ function frame(now) {
     const intensity = mode.intensity();
     if (intensity !== null && app.is(PLAYING)) audio.setIntensity(intensity);
   }
-  if (app.is(PLAYING, COUNTDOWN)) renderHud(mode, settings.theme);
+  if (app.is(PLAYING, COUNTDOWN)) renderHud(mode, activeTheme());
 
   const { view } = mode; // у онлайна вида нет, пока не пришёл первый снимок
   if (view && mode.needsSetup) {
@@ -440,6 +463,7 @@ const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, setti
 const tutorialUI = createTutorialUI({
   onNext: () => { if (mode.kind === 'tutorial') mode.next(); },
   onSkip: () => toMenu(),
+  onLayout: fitSceneToTutorial,
 });
 const firstHints = createFirstHints({ seen: tutorial.hints, save: () => saveTutorial(tutorial) });
 
@@ -527,6 +551,7 @@ for (const type of ['pointerup', 'pointercancel']) {
 function updateDpad() {
   const visible = settings.controls === 'buttons' && isTouchDevice() && app.is(PLAYING, COUNTDOWN);
   $('#dpad').classList.toggle('hidden', !visible);
+  fitSceneToTutorial();
 }
 $('#dpad').addEventListener('pointerdown', (e) => {
   const dir = e.target.closest('[data-dir]')?.dataset.dir;
@@ -634,6 +659,8 @@ exposeForTests({
   get state() { return app.state; },
   get game() { return mode.game; },
   get turn() { return renderer.turn; },
+  get theme() { return document.documentElement.dataset.theme; },
+  get fieldInsets() { return renderer.insets; },
   get tutorialStep() { return mode.kind === 'tutorial' ? mode.index : null; },
 });
 markActive($('#mode-select'), 'mode', settings.mode);

@@ -2,7 +2,7 @@
  * Обучение на настоящем поле — тот же интерфейс, что у остальных режимов
  * (src/modes/modes.js), поэтому игровой цикл, управление и сцена не меняются.
  *
- * Поле небольшое, змейка медленная, предметы раскладывает сам режим — перед
+ * Поле небольшое и одинаковое на всех устройствах, змейка медленная, предметы раскладывает сам режим — перед
  * змейкой, чтобы до них было пару шагов. Погибнуть нельзя насовсем: если змейка
  * разбилась или отравилась, шаг начинается заново.
  *
@@ -18,22 +18,23 @@ import {
 import { STEPS } from '../tutorial/steps.js';
 
 const TUTORIAL_SPEED = 0.6; // медленнее обычного: время подумать
+// Одно и то же поле у всех: квадрат не поворачивается ни на телефоне, ни на компьютере.
+export const TUTORIAL_FIELD = Object.freeze({ width: 11, height: 11 });
 const BONUS_KINDS = new Set([ITEM.SLOW, ITEM.GHOST]);
 
 export class TutorialMode {
   /**
    * @param {object} config
-   * @param {boolean} config.narrow вертикальный экран — вертикальное поле
    * @param {() => string} [config.screenUp] какое направление поля сейчас «вверх по экрану»
    * @param {() => number} [config.rng] случайность (в тестах — предсказуемая)
    */
-  constructor({ narrow, screenUp = () => 'UP', rng = () => 0.99 }) {
+  constructor({ screenUp = () => 'UP', rng = () => 0.99 } = {}) {
     this.kind = 'tutorial';
     this.isDuel = false;
     this.canPause = true;
     this.restartable = false;
     this.myIndex = 0;
-    this.size = narrow ? { width: 11, height: 15 } : { width: 17, height: 11 };
+    this.size = { ...TUTORIAL_FIELD };
     this.screenUp = screenUp;
     this.rng = rng;
     this.index = 0;
@@ -58,9 +59,14 @@ export class TutorialMode {
     this.game.items = [];
   }
 
-  /** Клетка в k шагах перед головой (и side клеток вбок), с переходом через край поля. */
+  /**
+   * Клетка в k шагах перед головой (и side клеток вбок), с переходом через край поля.
+   * «Перед» — по уже заказанному повороту: шаг «поворот» засчитывается раньше,
+   * чем змейка повернёт, и яблоко должно лечь на новый курс, а не на старый.
+   */
   cellAhead(k, side = 0) {
-    const { head, direction: d } = this.game;
+    const { head } = this.game;
+    const d = this.game.turnQueue.at(-1) ?? this.game.direction;
     const { width, height } = this.size;
     // Вбок — поворот направления на 90°.
     const x = head.x + d.x * k + -d.y * side;

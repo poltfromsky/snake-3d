@@ -115,6 +115,32 @@ test('подсказка первых партий: впервые появил�
   expect(errors).toEqual([]);
 });
 
+test('обучение: всегда «Неон» (яблоко красное), карточка и кнопки не закрывают поле', async ({ page, isMobile }) => {
+  const errors = await openGame(page, { tutorial: false, theme: 'sunset', controls: 'buttons' });
+  await page.evaluate(() => { globalThis.document.querySelector('.howto').open = true; });
+  await page.locator('.howto [data-action="tutorial"]').click();
+  await expect(page.locator('#tutorial-card')).toBeVisible();
+  // В «Закате» яблоко бирюзовое, а текст говорит «красное»: в обучении тема принудительно «Неон».
+  expect(await page.evaluate(() => globalThis.__snakeE2E.theme)).toBe('neon');
+  expect(await page.evaluate(() => globalThis.__snakeE2E.game.opts)).toMatchObject({ width: 11, height: 11 });
+
+  const gap = await page.evaluate(() => {
+    const card = globalThis.document.querySelector('#tutorial-card').getBoundingClientRect();
+    const dpad = globalThis.document.querySelector('#dpad');
+    const inset = globalThis.__snakeE2E.fieldInsets;
+    return {
+      cardBottom: card.bottom, top: inset.top, bottom: inset.bottom, height: globalThis.innerHeight,
+      dpadTop: dpad.classList.contains('hidden') ? null : dpad.getBoundingClientRect().top,
+    };
+  });
+  expect(gap.top).toBeGreaterThanOrEqual(gap.cardBottom);
+  if (isMobile) expect(gap.height - gap.bottom).toBeLessThanOrEqual(gap.dpadTop);
+  await page.locator('#btn-tutorial-skip').click();
+  expect(await page.evaluate(() => globalThis.__snakeE2E.fieldInsets)).toEqual({ top: 0, bottom: 0 });
+  expect(await page.evaluate(() => globalThis.__snakeE2E.theme)).toBe('sunset');
+  expect(errors).toEqual([]);
+});
+
 test('кнопки на экране — свои иконки, без символов, которые браузер превращает в эмодзи', async ({ page }) => {
   await openGame(page);
   for (const id of ['#btn-pause', '#dpad [data-dir="UP"]', '#dpad [data-dir="LEFT"]', '#dpad [data-dir="RIGHT"]', '#dpad [data-dir="DOWN"]']) {

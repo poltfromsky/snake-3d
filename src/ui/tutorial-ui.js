@@ -9,10 +9,13 @@ import { $ } from './dom.js';
  * @param {object} hooks
  * @param {() => void} hooks.onNext «Дальше» на шагах, где нужно только прочитать
  * @param {() => void} hooks.onSkip «Пропустить обучение»
+ * @param {() => void} hooks.onLayout карточка изменила размер или показана/скрыта — поле надо подвинуть
  */
-export function createTutorialUI({ onNext, onSkip }) {
+export function createTutorialUI({ onNext, onSkip, onLayout }) {
   $('#btn-tutorial-next').addEventListener('click', onNext);
   $('#btn-tutorial-skip').addEventListener('click', onSkip);
+  // Текст шага и замечания меняют высоту карточки — поле под ней подстраивается.
+  new ResizeObserver(() => onLayout()).observe($('#tutorial-card'));
 
   return {
     /** Показать текущий шаг. */
@@ -27,12 +30,15 @@ export function createTutorialUI({ onNext, onSkip }) {
       $('#btn-tutorial-next').classList.toggle('hidden', !reading);
       $('#btn-tutorial-next').textContent = step.id === 'done' ? 'Готово' : 'Дальше';
       $('#btn-tutorial-skip').classList.toggle('hidden', step.id === 'done');
+      onLayout();
     },
     notice(text) {
       $('#tutorial-notice').textContent = text;
+      onLayout();
     },
     setVisible(visible) {
       $('#tutorial-card').classList.toggle('hidden', !visible);
+      onLayout();
     },
     /** Плашка в меню — пока обучение не пройдено. */
     setBanner(visible) {

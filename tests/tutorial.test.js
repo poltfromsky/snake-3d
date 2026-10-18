@@ -58,7 +58,7 @@ test('подсказки зависят от устройства: свайп, �
 });
 
 test('обучение проходится целиком: поворот, яблоко, гниль, бонус, опасности, готово', () => {
-  const mode = new TutorialMode({ narrow: true });
+  const mode = new TutorialMode();
   assert.deepEqual(types(events(mode)), ['tutorialStep']);
   assert.equal(mode.step.id, 'turn');
 
@@ -91,8 +91,27 @@ test('обучение проходится целиком: поворот, яб
   assert.equal(mode.done, true);
 });
 
+test('поле обучения одинаковое у всех: квадрат, без разницы телефон или компьютер', () => {
+  const a = new TutorialMode();
+  const b = new TutorialMode({ screenUp: () => 'RIGHT' });
+  assert.deepEqual(a.size, { width: 11, height: 11 });
+  assert.deepEqual(b.size, a.size);
+  assert.deepEqual(a.game.snake, b.game.snake, 'змейка стартует в одном месте');
+});
+
+test('после поворота яблоко лежит на новом курсе, а не на старом', () => {
+  const mode = new TutorialMode();
+  events(mode);
+  mode.steer('touch', 'UP');
+  events(mode, 10); // шаг засчитан, змейка ещё не повернула
+  assert.equal(mode.step.id, 'apple');
+  const [apple] = mode.game.items;
+  assert.equal(apple.x, mode.game.head.x, 'яблоко прямо над головой');
+  assert.notEqual(apple.y, mode.game.head.y);
+});
+
 test('съел гниль на шаге «обойдите» — замечание; отравился насовсем — шаг заново', () => {
-  const mode = new TutorialMode({ narrow: true });
+  const mode = new TutorialMode();
   mode.steer('touch', 'UP');
   events(mode, 10);
   playUntilStepChanges(mode, ITEM.APPLE);
@@ -113,7 +132,7 @@ test('съел гниль на шаге «обойдите» — замечан�
 });
 
 test('«вверх по экрану» на повёрнутом поле — это другое направление поля', () => {
-  const mode = new TutorialMode({ narrow: false, screenUp: () => 'RIGHT' });
+  const mode = new TutorialMode({ screenUp: () => 'RIGHT' });
   events(mode);
   mode.steer('touch', 'UP');
   events(mode, 10);
@@ -122,7 +141,7 @@ test('«вверх по экрану» на повёрнутом поле — э
 });
 
 test('у обучения тот же интерфейс, что у режимов игры', () => {
-  const mode = new TutorialMode({ narrow: false });
+  const mode = new TutorialMode();
   for (const f of ['update', 'steer', 'playerName', 'hud', 'intensity', 'setSpeedFactor', 'dispose']) {
     assert.equal(typeof mode[f], 'function', f);
   }

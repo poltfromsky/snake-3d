@@ -74,6 +74,7 @@ export class SceneRenderer {
     this.itemMeshes = new Map();
     this.stoneKeys = '';
     this.size = null;
+    this.insets = { top: 0, bottom: 0 };
 
     // Свечение ярких объектов (bloom) — неоновый вид без текстур.
     this.composer = new EffectComposer(this.renderer);
@@ -468,14 +469,31 @@ export class SceneRenderer {
     this.camera.lookAt(shakeTarget.copy(this.lookAt).add(shakeOffset));
   }
 
+  /**
+   * Свободное место под полем: сверху и снизу заняты интерфейсом (карточка обучения,
+   * кнопки-стрелки). Холст остаётся во весь экран, а картинка с полем сдвигается
+   * и сжимается в оставшуюся область.
+   */
+  setInsets(top, bottom) {
+    const next = { top: Math.max(0, Math.round(top)), bottom: Math.max(0, Math.round(bottom)) };
+    if (next.top === this.insets.top && next.bottom === this.insets.bottom) return;
+    this.insets = next;
+    this.resize();
+  }
+
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    // Область под поле не меньше трети экрана: на совсем низком окне поле важнее карточки.
+    const { top, bottom } = this.insets;
+    const areaH = Math.max(h - top - bottom, Math.round(h / 3));
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
-    this.camera.aspect = w / h;
+    this.camera.aspect = w / areaH;
     // На узком экране шире угол обзора, чтобы поле влезало целиком.
-    this.camera.fov = fovFor(w / h);
+    this.camera.fov = fovFor(w / areaH);
+    if (top || bottom) this.camera.setViewOffset(w, areaH, 0, -top, w, h);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
     // Повернули телефон — поле поворачивается вместе с экраном (камера доедет плавно).
     this.updateLayout();

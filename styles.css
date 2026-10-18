@@ -742,13 +742,13 @@ kbd {
   top: calc(max(12px, env(safe-area-inset-top)) + 64px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(440px, calc(100% - 24px));
+  width: min(560px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 14px;
+  padding: 12px 16px 14px;
   text-align: left;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.4;
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
@@ -758,10 +758,22 @@ kbd {
 }
 .tutorial-card p { margin: 0; }
 .tutorial-card b { color: var(--accent); }
+.tutorial-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tutorial-title { font-size: 19px; }
 .tutorial-progress { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tutorial-skip {
+  padding: 6px 0 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .tutorial-notice { color: #ffb347; font-weight: 600; min-height: 0; }
 .tutorial-notice:empty { display: none; }
-.tutorial-card .btn { padding: 9px 12px; font-size: 14px; }
+.tutorial-card .btn { padding: 10px 12px; font-size: 16px; }
 
 /* Подсказка первых партий — над нижним краем, не перекрывает счёт. */
 .first-hint {

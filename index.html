@@ -44,14 +44,14 @@
   <div id="toast" class="toast" aria-live="polite"></div>
   <!-- Обучение: задание поверх игры. -->
   <div id="tutorial-card" class="tutorial-card hidden" role="status" aria-live="polite">
-    <small id="tutorial-progress" class="tutorial-progress"></small>
-    <b id="tutorial-title"></b>
+    <div class="tutorial-head">
+      <small id="tutorial-progress" class="tutorial-progress"></small>
+      <button type="button" class="tutorial-skip" id="btn-tutorial-skip">Пропустить обучение</button>
+    </div>
+    <b id="tutorial-title" class="tutorial-title"></b>
     <p id="tutorial-text"></p>
     <p id="tutorial-notice" class="tutorial-notice"></p>
-    <div class="row">
-      <button type="button" class="btn primary hidden" id="btn-tutorial-next">Дальше</button>
-      <button type="button" class="btn" id="btn-tutorial-skip">Пропустить обучение</button>
-    </div>
+    <button type="button" class="btn primary hidden" id="btn-tutorial-next">Дальше</button>
   </div>
   <!-- Подсказки в первых партиях: что-то впервые появилось на поле. -->
   <div id="first-hint" class="first-hint hidden" role="status" aria-live="polite"></div>
