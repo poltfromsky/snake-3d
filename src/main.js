@@ -242,10 +242,13 @@ function frame(now) {
   const dt = Math.min(now - lastTime, 250);
   lastTime = now;
 
-  if (mode.kind === 'online' && app.is(PLAYING) && mode.isStalled(STALL_MS)) connectionLost();
-
   if (app.is(PLAYING)) {
     handleEvents(mode.update(dt));
+    if (mode.kind === 'online' && mode.isStalled(STALL_MS)) {
+      connectionLost();
+      requestAnimationFrame(frame);
+      return;
+    }
     const intensity = mode.intensity();
     if (intensity !== null && app.is(PLAYING)) audio.setIntensity(intensity);
   }

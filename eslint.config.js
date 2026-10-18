@@ -8,7 +8,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['**/node_modules/**', 'server/.wrangler/**', '_site/**'],
+    ignores: ['**/node_modules/**', 'server/.wrangler/**', '_site/**', 'playwright-report/**', 'test-results/**'],
   },
   js.configs.recommended,
   {

@@ -79,7 +79,8 @@ jobs:
       - name: Секретная соль для локального сервера (своя на каждый прогон)
         run: echo "IP_SALT=$(openssl rand -hex 32)" > server/.dev.vars
       - name: Браузерные сценарии
-        run: npx playwright test
+        # Виртуальный дисплей: Firefox рисует 3D только с экраном (см. playwright.config.js).
+        run: xvfb-run --auto-servernum npx playwright test
 
   deploy-server:
     needs: [test, server-e2e, browser-e2e]

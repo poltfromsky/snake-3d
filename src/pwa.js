@@ -35,7 +35,7 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
     onUpdateReady();
   };
 
-  window.addEventListener('load', async () => {
+  const register = async () => {
     try {
       const registration = await navigator.serviceWorker.register('sw.js');
       // Уже скачанная версия ждёт с прошлого раза.
@@ -59,7 +59,11 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
     } catch {
       // Без service worker игра работает как обычный сайт.
     }
-  });
+  };
+  // После загрузки страницы, чтобы не отнимать сеть у самой игры. Игра грузится
+  // через boot.js и может стартовать уже после события load — тогда сразу.
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once: true });
   return api;
 }
 

@@ -6,7 +6,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  gameState, openGame, openGameFromLink,
+  gameState, openGame, openGameFromLink, waitForGame,
 } from './helpers.js';
 
 test('одиночная игра: удар о стену → экран «Игра окончена»', async ({ page }) => {
@@ -137,7 +137,7 @@ test('ник вводится один раз: из настроек он поп
   await page.locator('#set-name').pressSequentially('Питон');
   await page.locator('#screen-settings [data-action="back"]').click();
   await page.reload();
-  await expect(page.locator('#screen-menu')).toBeVisible();
+  await waitForGame(page);
 
   await page.locator('#screen-menu [data-action="play"]').click();
   // Очки, чтобы результат можно было сохранить; дальше змейка сама врежется в стену.
@@ -148,5 +148,21 @@ test('ник вводится один раз: из настроек он поп
   await page.locator('#screen-over [data-action="menu"]').click();
   await page.locator('[data-action="feedback"]').click();
   await expect(page.locator('#feedback-name')).toHaveValue('Питон');
+  expect(errors).toEqual([]);
+});
+
+test('браузер без 3D видит объяснение, а не мёртвые кнопки', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  // Как будто WebGL выключен: getContext для 3D возвращает null.
+  await page.addInitScript(() => {
+    const original = globalThis.HTMLCanvasElement.prototype.getContext;
+    globalThis.HTMLCanvasElement.prototype.getContext = function getContext(type, ...rest) {
+      return /webgl/.test(type) ? null : original.call(this, type, ...rest);
+    };
+  });
+  await page.goto('/?e2e');
+  await expect(page.locator('#screen-no3d')).toBeVisible();
+  await expect(page.locator('#screen-menu')).toBeHidden();
   expect(errors).toEqual([]);
 });

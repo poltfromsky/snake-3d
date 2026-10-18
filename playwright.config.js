@@ -38,7 +38,13 @@ export default defineConfig({
     { name: 'iphone-safari', use: { ...devices['iPhone 14'] } },
     {
       name: 'desktop-firefox',
-      use: { ...devices['Desktop Firefox'], launchOptions: { firefoxUserPrefs: { 'media.autoplay.default': 0 } } },
+      use: {
+        ...devices['Desktop Firefox'],
+        // Без экрана (headless) Firefox на Linux не создаёт WebGL. В CI он работает
+        // в виртуальном дисплее (xvfb-run) с программным 3D — как обычный браузер.
+        headless: !CI,
+        launchOptions: { firefoxUserPrefs: { 'media.autoplay.default': 0, 'webgl.force-enabled': true } },
+      },
     },
   ],
   webServer: [

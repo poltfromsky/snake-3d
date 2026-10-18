@@ -22,12 +22,21 @@ async function seedSettings(page, settings) {
   }, { ...BASE_SETTINGS, ...settings });
 }
 
+/**
+ * Игра запустилась: скрипты загружены, кнопки работают. Меню видно раньше — оно есть
+ * в самом HTML, а игра стартует после проверки 3D (src/boot.js) и загрузки Three.js.
+ */
+export async function waitForGame(page) {
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await expect(page.locator('#screen-menu')).toBeVisible();
+}
+
 /** Открывает игру в тестовом режиме (?e2e) с заданными настройками. */
 export async function openGame(page, settings = {}) {
   const errors = collectErrors(page);
   await seedSettings(page, settings);
   await page.goto('/?e2e');
-  await expect(page.locator('#screen-menu')).toBeVisible();
+  await waitForGame(page);
   return errors;
 }
 
@@ -36,6 +45,7 @@ export async function openGameFromLink(page, url, settings = {}) {
   const errors = collectErrors(page);
   await seedSettings(page, settings);
   await page.goto(url);
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
   return errors;
 }
 

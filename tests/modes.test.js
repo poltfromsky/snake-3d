@@ -175,17 +175,28 @@ test('онлайн: снимок превращается в вид, движе�
   assert.deepEqual(online.hud().scores, [4, 7]);
 });
 
-test('онлайн: обрыв связи — нет снимков дольше порога, но не после конца партии', () => {
-  let now = 0;
-  const online = new OnlineMode({ connection: fakeConnection(), slot: 0, now: () => now });
+test('онлайн: обрыв связи — страница работает, а снимков нет дольше порога', () => {
+  const online = new OnlineMode({ connection: fakeConnection(), slot: 0 });
+  online.update(5000);
   assert.equal(online.isStalled(3000), false, 'без снимков — ещё ждём начала');
   online.receive({ t: 'state', s: snapshot() });
-  now = 2999;
+  for (let t = 0; t < 2900; t += 100) online.update(100);
   assert.equal(online.isStalled(3000), false);
-  now = 3001;
+  for (let t = 0; t < 200; t += 100) online.update(100);
   assert.equal(online.isStalled(3000), true);
+  online.receive({ t: 'state', s: snapshot() });
+  assert.equal(online.isStalled(3000), false, 'новый снимок — связь есть');
+});
+
+test('онлайн: подвисание телефона — не обрыв связи (поймано в CI на медленной машине)', () => {
+  const online = new OnlineMode({ connection: fakeConnection(), slot: 0 });
+  online.receive({ t: 'state', s: snapshot() });
+  // Страница «замерла» на 5 секунд: один кадр длиной 5000 мс. Снимки ждут в очереди.
+  online.update(5000);
+  assert.equal(online.isStalled(3000), false);
+  // После конца партии снимков может не быть сколько угодно.
   online.receive({ t: 'state', s: snapshot({ over: true }) });
-  now += 10_000;
+  for (let t = 0; t < 10_000; t += 100) online.update(100);
   assert.equal(online.isStalled(3000), false);
 });
 

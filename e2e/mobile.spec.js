@@ -29,7 +29,7 @@ test.describe('телефон', () => {
 
   test('ни один экран не вылезает за края телефона', async ({ page }) => {
     const errors = await openGame(page);
-    const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install'];
+    const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install', 'no3d'];
     const overflow = await page.evaluate((ids) => {
       const { innerWidth } = globalThis;
       const out = {};

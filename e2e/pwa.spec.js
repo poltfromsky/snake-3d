@@ -5,7 +5,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { openGame } from './helpers.js';
+import { openGame, waitForGame } from './helpers.js';
 
 test('манифест приложения и все иконки на месте', async ({ page, request }) => {
   await openGame(page);
@@ -24,6 +24,7 @@ test('service worker включается и управляет странице
     return reg?.active?.state ?? null;
   }), { timeout: 20_000 }).toBe('activated');
   await page.reload();
+  await waitForGame(page);
   await expect.poll(() => page.evaluate(() => Boolean(globalThis.navigator.serviceWorker.controller))).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -39,12 +40,12 @@ test('без интернета игра открывается и в неё м�
     return keys.some((r) => r.url.includes('three.module.js')) && keys.some((r) => r.url.includes('UnrealBloomPass'));
   }), { timeout: 30_000 }).toBe(true);
   await page.reload();
-  await expect(page.locator('#screen-menu')).toBeVisible();
+  await waitForGame(page);
 
   await context.setOffline(true);
   try {
     await page.reload();
-    await expect(page.locator('#screen-menu')).toBeVisible();
+    await waitForGame(page);
     await page.locator('#screen-menu [data-action="play"]').click();
     await expect(page.locator('#hud')).toBeVisible();
     await expect.poll(() => page.evaluate(() => globalThis.__snakeE2E.state)).toBe('playing');

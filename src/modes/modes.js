@@ -145,6 +145,8 @@ export class BotDuelMode extends LocalDuelBase {
  * досчитывает плавность между снимками и пересылает повороты.
  */
 export class OnlineMode {
+  static FRAME_CAP_MS = 250;
+
   /**
    * @param {object} config
    * @param {{send(msg): void, close(): void}} config.connection
@@ -162,6 +164,7 @@ export class OnlineMode {
     this.now = now;
     this.game = null;
     this.remote = null; // { snap, receivedAt }
+    this.silence = 0; // сколько страница проработала без снимков от сервера, мс
     this.names = OnlineMode.cleanNames(names);
     // Сцену пересобираем под поле сервера: по первому снимку и в начале каждого раунда.
     this.needsSetup = true;
@@ -176,6 +179,7 @@ export class OnlineMode {
     switch (msg.t) {
       case 'state':
         this.remote = { snap: msg.s, receivedAt: this.now() };
+        this.silence = 0;
         return { type: 'events', events: Array.isArray(msg.events) ? msg.events : [] };
       case 'round':
         this.needsSetup = true;
@@ -219,12 +223,20 @@ export class OnlineMode {
 
   get timed() { return this.remote?.snap.mode === MODES.TIMED; }
 
-  /** Во время партии сервер шлёт снимок минимум раз в полсекунды; дольше — связь оборвалась. */
+  /**
+   * Во время партии сервер шлёт снимок минимум раз в полсекунды; если дольше ничего нет — связь оборвалась.
+   * Тишину считаем по времени, пока страница работала (update), а не по часам: если телефон сам
+   * подвис на несколько секунд, снимки лежат в очереди и придут сразу, — это не обрыв.
+   */
   isStalled(stallMs) {
-    return Boolean(this.remote) && !this.remote.snap.over && this.now() - this.remote.receivedAt > stallMs;
+    return Boolean(this.remote) && !this.remote.snap.over && this.silence > stallMs;
   }
 
-  update() { return []; }
+  /** Партию считает сервер; здесь только учёт тишины. Кадр длиннее FRAME_CAP_MS — подвисание, а не время ожидания. */
+  update(dt) {
+    if (this.remote) this.silence += Math.min(dt, OnlineMode.FRAME_CAP_MS);
+    return [];
+  }
 
   steer(_device, dir) { this.connection.send({ t: 'turn', dir }); }
 

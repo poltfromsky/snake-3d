@@ -183,6 +183,19 @@
     </div>
   </section>
 
+  <!-- Браузер без 3D (WebGL выключен или не поддерживается): объясняем, что делать -->
+  <section id="screen-no3d" class="screen hidden">
+    <div class="panel small">
+      <h2>Нужна 3D-графика</h2>
+      <p class="subtitle">Этот браузер не может показать 3D (WebGL), а без него игра не запустится.</p>
+      <ol class="install-steps">
+        <li>Откройте игру в <b>Chrome</b>, <b>Safari</b>, <b>Яндекс</b> или <b>Firefox</b> последней версии.</li>
+        <li>Если открывали из Telegram или другого приложения — откройте ссылку в обычном браузере.</li>
+        <li>На компьютере включите аппаратное ускорение в настройках браузера и обновите драйвер видеокарты.</li>
+      </ol>
+    </div>
+  </section>
+
   <!-- Как установить на iPhone: Safari не показывает кнопку установки сам -->
   <section id="screen-install" class="screen hidden">
     <div class="panel small">
@@ -301,6 +314,6 @@
   </section>
 
   <noscript>Для игры нужен JavaScript.</noscript>
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="src/boot.js"></script>
 </body>
 </html>
