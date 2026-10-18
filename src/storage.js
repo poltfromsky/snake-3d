@@ -12,6 +12,9 @@ const RECORDS_KEY = 'snake3d.records.v1'; // до версии 1.6: топ-10 н
 const HISTORY_KEY = 'snake3d.history.v1';
 const PENDING_KEY = 'snake3d.pending.v1';
 const DEVICE_KEY = 'snake3d.device.v1';
+const TUTORIAL_KEY = 'snake3d.tutorial.v1';
+/** Сколько раз перед «Играть» предлагаем обучение, если его не прошли. Дальше — только плашка в меню. */
+export const TUTORIAL_OFFERS = 3;
 const MAX_HISTORY = 100;
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -103,6 +106,26 @@ export function addAttempt(mode, { score, length, date = Date.now() }) {
   history[mode] = list;
   write(HISTORY_KEY, history);
   return score > 0 && score > before;
+}
+
+/**
+ * Обучение: показывали ли, прошёл ли, сколько раз предлагали перед игрой и какие
+ * подсказки первых партий уже видел. { shown, done, offers, hints: {bad: true, ...} }
+ */
+export function loadTutorial() {
+  const t = read(TUTORIAL_KEY, null);
+  return {
+    shown: Boolean(t?.shown), done: Boolean(t?.done), offers: Number(t?.offers) || 0, hints: { ...t?.hints },
+  };
+}
+
+export function saveTutorial(state) {
+  write(TUTORIAL_KEY, state);
+}
+
+/** Совсем новый игрок: ничего не сохранял и обучение ему ещё не показывали. */
+export function isNewPlayer() {
+  return !read(TUTORIAL_KEY, null) && !read(HISTORY_KEY, null) && !read(RECORDS_KEY, null) && !read(SETTINGS_KEY, null);
 }
 
 /**

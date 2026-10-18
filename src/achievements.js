@@ -26,6 +26,10 @@ export const ACHIEVEMENTS = Object.freeze([
     id: 'ouroboros', icon: '♾️', rarity: 'legendary',
     title: 'Уроборос', description: 'Победить всех четырёх ботов: круг замкнулся',
   },
+  {
+    id: 'first-steps', icon: '🎓', rarity: 'common',
+    title: 'Первые шаги', description: 'Пройти обучение',
+  },
 ]);
 
 const BOT_ACHIEVEMENTS = ACHIEVEMENTS.filter((a) => a.bot);

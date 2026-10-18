@@ -38,21 +38,40 @@
     <div class="hud-duel duel-stat" id="hud-duel"></div>
     <div class="hud-stat hidden" id="hud-timer-box"><span>Время</span><b id="hud-timer">1:30</b></div>
     <div id="hud-effects" class="hud-effects"></div>
-    <button id="btn-pause" class="icon-btn" aria-label="Пауза">❚❚</button>
+    <!-- Иконки — свои SVG, а не символы шрифта: ◀ ▶ некоторые браузеры (Яндекс на Samsung) рисуют как эмодзи. -->
+    <button id="btn-pause" class="icon-btn" aria-label="Пауза"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"/></svg></button>
   </header>
   <div id="toast" class="toast" aria-live="polite"></div>
+  <!-- Обучение: задание поверх игры. -->
+  <div id="tutorial-card" class="tutorial-card hidden" role="status" aria-live="polite">
+    <small id="tutorial-progress" class="tutorial-progress"></small>
+    <b id="tutorial-title"></b>
+    <p id="tutorial-text"></p>
+    <p id="tutorial-notice" class="tutorial-notice"></p>
+    <div class="row">
+      <button type="button" class="btn primary hidden" id="btn-tutorial-next">Дальше</button>
+      <button type="button" class="btn" id="btn-tutorial-skip">Пропустить обучение</button>
+    </div>
+  </div>
+  <!-- Подсказки в первых партиях: что-то впервые появилось на поле. -->
+  <div id="first-hint" class="first-hint hidden" role="status" aria-live="polite"></div>
   <!-- Кнопки-стрелки для телефона (включаются в настройках вместо свайпов). -->
   <div id="dpad" class="dpad hidden" aria-label="Кнопки управления">
-    <button data-dir="UP" aria-label="Вверх">▲</button>
-    <button data-dir="LEFT" aria-label="Влево">◀</button>
-    <button data-dir="RIGHT" aria-label="Вправо">▶</button>
-    <button data-dir="DOWN" aria-label="Вниз">▼</button>
+    <button data-dir="UP" aria-label="Вверх"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(0deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+    <button data-dir="LEFT" aria-label="Влево"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(-90deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+    <button data-dir="RIGHT" aria-label="Вправо"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(90deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+    <button data-dir="DOWN" aria-label="Вниз"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(180deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
   </div>
   <div id="achievement-toasts" class="achievement-toasts" aria-live="polite"></div>
 
   <!-- Главное меню -->
   <section id="screen-menu" class="screen">
     <div class="panel">
+      <!-- Обучение ещё не пройдено: плашка висит, пока его не пройдут. -->
+      <div id="tutorial-banner" class="update-banner hidden" role="status">
+        <span>🎓 Вы ещё не прошли обучение — это 1 минута</span>
+        <button class="btn primary" data-action="tutorial">Пройти</button>
+      </div>
       <!-- Новая версия скачана в фоне: включается по кнопке, только из меню. -->
       <div id="update-banner" class="update-banner hidden" role="status">
         <span>Вышла новая версия игры</span>
@@ -91,6 +110,7 @@
       <button class="btn link-btn hidden" id="btn-install" data-action="install">📲 Установить как приложение</button>
       <details class="howto" open>
         <summary>Как играть</summary>
+        <button class="btn link-btn" data-action="tutorial">🎓 Пройти обучение — 1 минута</button>
         <div class="howto-grid">
           <section aria-labelledby="howto-controls">
             <h3 id="howto-controls">Управление</h3>
@@ -99,7 +119,7 @@
               <li class="keyboard-only"><b>Пауза</b><span class="keycaps"><kbd>Пробел</kbd><i>или</i><kbd>Esc</kbd></span></li>
               <li class="keyboard-only"><b>Старт из меню</b><span class="keycaps"><kbd>Enter</kbd></span></li>
               <li class="touch-only"><b>Поворот</b><span class="keycaps">проведите пальцем в нужную сторону — в любом месте экрана</span></li>
-              <li class="touch-only"><b>Пауза</b><span class="keycaps">кнопка ❚❚ вверху справа</span></li>
+              <li class="touch-only"><b>Пауза</b><span class="keycaps">кнопка паузы вверху справа</span></li>
               <li class="touch-only"><b>Кнопки</b><span class="keycaps">стрелки на экране вместо свайпов — в настройках</span></li>
             </ul>
             <p class="howto-note keyboard-only"><b>Одна клавиатура:</b> игрок 1 — <kbd>WASD</kbd>, игрок 2 — стрелки.</p>
@@ -225,6 +245,26 @@
     </div>
   </section>
 
+  <!-- Обучение не пройдено, а игрок нажал «Играть» -->
+  <section id="screen-tutorial-offer" class="screen hidden">
+    <div class="panel small">
+      <h2>Сначала обучение?</h2>
+      <p class="subtitle">Одна минута — и понятно, как поворачивать, что можно есть и чего избегать.</p>
+      <button class="btn primary" data-action="tutorial">🎓 Пройти обучение</button>
+      <button class="btn" data-action="play-anyway">Играть без обучения</button>
+    </div>
+  </section>
+
+  <!-- Обучение пройдено -->
+  <section id="screen-tutorial-done" class="screen hidden">
+    <div class="panel small">
+      <h2>Обучение пройдено!</h2>
+      <p class="subtitle">Теперь вы знаете всё, что нужно. Пройти ещё раз можно в меню («Как играть») или в настройках.</p>
+      <button class="btn primary" data-action="play">Играть</button>
+      <button class="btn" data-action="menu">В меню</button>
+    </div>
+  </section>
+
   <!-- Итог дуэли -->
   <section id="screen-duel" class="screen hidden">
     <div class="panel small">
@@ -324,6 +364,9 @@
           <button data-value="off">По кнопке</button>
           <button data-value="on">Автоматически</button>
         </div>
+      </div>
+      <div class="field">Обучение
+        <button class="btn" data-action="tutorial">🎓 Пройти обучение заново</button>
       </div>
       <div class="field touch-only">Управление
         <div class="segmented compact" id="set-controls">

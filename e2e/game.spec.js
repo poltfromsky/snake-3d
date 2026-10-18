@@ -74,7 +74,7 @@ test('против бота: победа над Ужиком даёт дост�
   await expect(page.locator('.bot-btn[data-level="easy"]')).toHaveClass(/beaten/);
   await expect(page.locator('.bot-btn[data-level="claude"]')).not.toHaveClass(/beaten/);
   await page.locator('[data-action="achievements"]').click();
-  await expect(page.locator('#achievements-progress')).toHaveText('Открыто 1 из 5');
+  await expect(page.locator('#achievements-progress')).toHaveText('Открыто 1 из 6');
   expect(errors).toEqual([]);
 });
 

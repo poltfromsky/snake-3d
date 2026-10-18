@@ -14,7 +14,11 @@ import { Leaderboard } from './net/leaderboard.js';
 import { API_BASE, APP_VERSION } from './config.js';
 import { E2E, exposeForTests } from './e2e.js';
 import { registerServiceWorker, setupInstall } from './pwa.js';
-import { loadSettings, saveSettings, SPEED_FACTORS } from './storage.js';
+import {
+  isNewPlayer, loadSettings, loadTutorial, saveSettings, saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
+} from './storage.js';
+import { TutorialMode } from './modes/tutorial-mode.js';
+import { controlDevice } from './tutorial/steps.js';
 import { StateMachine, STATES } from './app/state-machine.js';
 import {
   BotDuelMode, LocalDuelMode, OnlineMode, SoloMode,
@@ -32,6 +36,8 @@ import {
 } from './ui/screens.js';
 import { createSettingsScreen } from './ui/settings-screen.js';
 import { isTouchDevice, WakeLock } from './ui/device.js';
+import { createFirstHints } from './ui/first-hints.js';
+import { createTutorialUI } from './ui/tutorial-ui.js';
 
 const { MENU, LOBBY, COUNTDOWN, PLAYING, PAUSED, OVER } = STATES;
 
@@ -49,7 +55,10 @@ const VPN_HINT = 'Для онлайн-игры включите VPN.';
 // Пауза перед экраном итогов, чтобы игрок увидел момент столкновения.
 const RESULT_DELAY_MS = 900;
 
+// Новый ли это игрок — проверяем до того, как игра что-нибудь сохранит.
+const firstVisit = isNewPlayer();
 const settings = loadSettings();
+const tutorial = loadTutorial();
 const audio = new AudioManager();
 audio.setVolumes(settings);
 const renderer = new SceneRenderer($('#scene'));
@@ -66,6 +75,9 @@ const app = new StateMachine(MENU, (_from, to) => {
   // Пока идёт партия, телефон не гасит экран.
   wakeLock.set(to === PLAYING || to === COUNTDOWN);
   updateDpad();
+  // Карточка обучения — только во время самого обучения (на паузе её нет).
+  tutorialUI.setVisible(mode.kind === 'tutorial' && to === PLAYING);
+  if (to !== PLAYING) firstHints.hide();
 });
 let mode = createSolo();
 let replay = null; // как начать такую же партию заново (реванш)
@@ -220,9 +232,68 @@ function duelOver(event) {
   }
 }
 
+/* ---------------- Обучение ---------------- */
+
+/** Чем управляет игрок — от этого зависят тексты подсказок. */
+const device = () => controlDevice({ touch: isTouchDevice(), controls: settings.controls });
+
+function startTutorial() {
+  tutorial.shown = true;
+  saveTutorial(tutorial);
+  play(() => new TutorialMode({
+    narrow: window.innerWidth < window.innerHeight,
+    // «Вверх по экрану» на повёрнутом поле — другое направление поля.
+    screenUp: () => renderer.toFieldDirection('UP'),
+  }));
+  tutorialUI.render(mode, device());
+  tutorialUI.setVisible(true);
+}
+
+function finishTutorial() {
+  tutorial.done = true;
+  // Гниль и бонусы уже объяснены в обучении — в первых партиях о них не напоминаем.
+  Object.assign(tutorial.hints, { bad: true, slow: true });
+  saveTutorial(tutorial);
+  tutorialUI.setBanner(false);
+  app.go(OVER);
+  audio.play('record');
+  show('tutorial-done');
+  const fresh = achievements.unlock('first-steps');
+  if (fresh) setTimeout(() => achievementToasts.show(fresh), 400);
+}
+
+/**
+ * Перед игрой: если обучение не пройдено — первые TUTORIAL_OFFERS раз предлагаем его.
+ * Дальше не навязываем, остаётся плашка в меню.
+ */
+let pendingStart = null;
+function requestStart(start) {
+  if (!tutorial.done && tutorial.offers < TUTORIAL_OFFERS) {
+    tutorial.offers += 1;
+    saveTutorial(tutorial);
+    pendingStart = start;
+    openFromMenu('tutorial-offer');
+    return;
+  }
+  start();
+}
+
 function handleEvents(events) {
   for (const e of events) {
     switch (e.type) {
+      case 'tutorialStep':
+        audio.play('levelUp');
+        tutorialUI.render(mode, device());
+        break;
+      case 'tutorialRetry':
+        tutorialUI.notice('Змейка разбилась — попробуем этот шаг ещё раз.');
+        break;
+      case 'tutorialBad':
+        tutorialUI.notice('Это была гниль: змейка укоротилась. Обойдите её!');
+        break;
+      case 'tutorialDone':
+        finishTutorial();
+        break;
       case 'eat':
         renderer.burstAt(e.kind, e.x, e.y);
         if (e.kind === 'apple') audio.play('eat');
@@ -232,6 +303,7 @@ function handleEvents(events) {
       case 'levelUp':
         audio.play('levelUp');
         toast(`Уровень ${e.level}`);
+        firstHints.levelUp();
         break;
       case 'gameOver':
         if (mode.isDuel) duelOver(e);
@@ -249,6 +321,8 @@ function frame(now) {
 
   if (app.is(PLAYING)) {
     handleEvents(mode.update(dt));
+    // Подсказки первых партий: что-то новое впервые появилось на поле.
+    if (app.is(PLAYING) && ['solo', 'bot', 'local'].includes(mode.kind)) firstHints.check(mode.view);
     if (mode.kind === 'online' && mode.isStalled(STALL_MS)) {
       connectionLost();
       requestAnimationFrame(frame);
@@ -361,6 +435,12 @@ const saver = createResultSaver({
   },
 });
 const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, settings });
+const tutorialUI = createTutorialUI({
+  onNext: () => { if (mode.kind === 'tutorial') mode.next(); },
+  onSkip: () => toMenu(),
+});
+const firstHints = createFirstHints({ seen: tutorial.hints, save: () => saveTutorial(tutorial) });
+
 const settingsScreen = createSettingsScreen({
   settings,
   audio,
@@ -411,11 +491,11 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.code === 'Escape' || e.code === 'KeyP') {
     if (app.is(PLAYING)) pause();
     else if (app.is(PAUSED)) resume();
-    else if (inMenu && e.code === 'Space') startSolo();
+    else if (inMenu && e.code === 'Space') requestStart(startSolo);
     else return;
     e.preventDefault();
   }
-  if (e.code === 'Enter' && inMenu) startSolo();
+  if (e.code === 'Enter' && inMenu) requestStart(startSolo);
 });
 
 // Свайпы: поворот срабатывает, как только палец сдвинулся на SWIPE_PX, не дожидаясь,
@@ -476,9 +556,15 @@ window.addEventListener('beforeunload', () => {
 $('#btn-pause').addEventListener('click', pause);
 
 const ACTIONS = {
-  play: startSolo,
-  local: startLocalDuel,
-  bot: (e) => startBotDuel(e.target.closest('[data-level]')?.dataset.level),
+  // Из меню — с вопросом про обучение; «Ещё раз» после партии — сразу.
+  play: () => (screen === 'menu' ? requestStart(startSolo) : startSolo()),
+  local: () => requestStart(startLocalDuel),
+  bot: (e) => {
+    const level = e.target.closest('[data-level]')?.dataset.level;
+    requestStart(() => startBotDuel(level));
+  },
+  tutorial: startTutorial,
+  'play-anyway': () => (pendingStart ?? startSolo)(),
   online: openOnline,
   'create-room': () => lobby.create(),
   'copy-link': () => lobby.copyLink(),
@@ -546,6 +632,7 @@ exposeForTests({
   get state() { return app.state; },
   get game() { return mode.game; },
   get turn() { return renderer.turn; },
+  get tutorialStep() { return mode.kind === 'tutorial' ? mode.index : null; },
 });
 markActive($('#mode-select'), 'mode', settings.mode);
 // Общая таблица и отзывы появляются, только когда подключена база.
@@ -556,12 +643,17 @@ renderCredits(MUSIC_TRACKS, MUSIC_LICENSE);
 setupScene();
 show('menu');
 
-// Пришли по ссылке друга: сразу подключаемся к его комнате.
+tutorialUI.setBanner(!tutorial.done);
+
+// Пришли по ссылке друга: сразу подключаемся к его комнате (обучение не навязываем).
 const invited = new URLSearchParams(window.location.search).get('room');
 if (invited) {
   history.replaceState(null, '', window.location.pathname);
   openOnline();
   lobby.joinInvite(invited);
+} else if (firstVisit) {
+  // Совсем новый игрок — сразу обучение (его можно пропустить).
+  startTutorial();
 }
 
 requestAnimationFrame(frame);

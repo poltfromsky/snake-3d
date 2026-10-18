@@ -15,11 +15,21 @@ export function collectErrors(page) {
   return errors;
 }
 
-/** Настройки — только в чистое хранилище: после перезагрузки остаётся то, что сохранила игра. */
-async function seedSettings(page, settings) {
-  await page.addInitScript((s) => {
-    if (!localStorage.getItem('snake3d.settings.v1')) localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
-  }, { ...BASE_SETTINGS, ...settings });
+/** Обучение уже пройдено и все подсказки показаны — чтобы они не мешали остальным сценариям. */
+const TUTORIAL_DONE = {
+  shown: true, done: true, offers: 3, hints: { bad: true, slow: true, ghost: true, stones: true, level: true },
+};
+
+/**
+ * Настройки — только в чистое хранилище: после перезагрузки остаётся то, что сохранила игра.
+ * tutorial: false — как у игрока, который обучение ещё не проходил.
+ */
+async function seedSettings(page, { tutorial = true, ...settings } = {}) {
+  await page.addInitScript(({ s, t }) => {
+    if (localStorage.getItem('snake3d.settings.v1')) return;
+    localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
+    if (t) localStorage.setItem('snake3d.tutorial.v1', JSON.stringify(t));
+  }, { s: { ...BASE_SETTINGS, ...settings }, t: tutorial ? TUTORIAL_DONE : null });
 }
 
 /**

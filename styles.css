@@ -710,13 +710,17 @@ kbd {
   touch-action: none;
 }
 
+.icon { display: block; width: 1em; height: 1em; margin: auto; }
+.dpad button .icon { width: 26px; height: 26px; }
+#btn-pause .icon { width: 18px; height: 18px; }
+
 .dpad button:active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .dpad [data-dir="UP"] { grid-area: up; }
 .dpad [data-dir="LEFT"] { grid-area: left; }
 .dpad [data-dir="RIGHT"] { grid-area: right; }
 .dpad [data-dir="DOWN"] { grid-area: down; }
 
-/* Плашка «вышла новая версия» — первой строкой в меню: ничего не перекрывает. */
+/* Плашки «вышла новая версия» и «пройдите обучение» — первыми строками в меню: ничего не перекрывают. */
 .update-banner {
   display: flex;
   align-items: center;
@@ -731,6 +735,52 @@ kbd {
 }
 
 .update-banner .btn { padding: 8px 14px; font-size: 14px; }
+
+/* Обучение: карточка с заданием под счётом, над полем. */
+.tutorial-card {
+  position: fixed;
+  top: calc(max(12px, env(safe-area-inset-top)) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 15px;
+  line-height: 1.4;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 6;
+}
+.tutorial-card p { margin: 0; }
+.tutorial-card b { color: var(--accent); }
+.tutorial-progress { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tutorial-notice { color: #ffb347; font-weight: 600; min-height: 0; }
+.tutorial-notice:empty { display: none; }
+.tutorial-card .btn { padding: 9px 12px; font-size: 14px; }
+
+/* Подсказка первых партий — над нижним краем, не перекрывает счёт. */
+.first-hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 8px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 6;
+}
 
 .install-steps { margin: 0; padding-left: 22px; text-align: left; line-height: 1.5; color: var(--muted); }
 .install-steps b { color: var(--text); }
