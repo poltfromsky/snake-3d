@@ -11,6 +11,7 @@ const SETTINGS_KEY = 'snake3d.settings.v1';
 const RECORDS_KEY = 'snake3d.records.v1'; // до версии 1.6: топ-10 на устройстве (переносится в историю)
 const HISTORY_KEY = 'snake3d.history.v1';
 const PENDING_KEY = 'snake3d.pending.v1';
+const DEVICE_KEY = 'snake3d.device.v1';
 const MAX_HISTORY = 100;
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -102,6 +103,21 @@ export function addAttempt(mode, { score, length, date = Date.now() }) {
   history[mode] = list;
   write(HISTORY_KEY, history);
   return score > 0 && score > before;
+}
+
+/**
+ * Секретный ключ этого устройства: им устройство доказывает серверу, что ник — его.
+ * Сервер хранит только хэш ключа. Ключ не покидает устройство иначе как в запросе
+ * к своему серверу; если очистить данные сайта, ник придётся выбрать заново.
+ */
+export function deviceKey() {
+  let key = read(DEVICE_KEY, null);
+  if (typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key)) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    key = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    write(DEVICE_KEY, key);
+  }
+  return key;
 }
 
 /**

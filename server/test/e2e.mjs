@@ -66,33 +66,71 @@ b.send({ t: 'rematch' });
 await a.waitFor((m) => m.t === 'round' && a.log.filter((x) => x.t === 'round').length >= 2);
 console.log('✔ реванш начался');
 
-// Общая таблица: у ника одна строка — его лучший результат.
-// Свой «адрес» на каждую отправку — иначе сработает ограничение частоты.
+// Общая таблица: у ника одна строка — его лучший результат; ник принадлежит устройству;
+// результат принимается только по билету партии и только правдоподобный по времени.
+// Свой «адрес» на каждый запрос — чтобы не упереться в лимиты (в бою его ставит Cloudflare).
 const nick = `e2e${Date.now().toString(36).slice(-6)}`;
+const deviceA = 'a'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
+const deviceB = 'b'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
 let fakeIp = 0;
-const submit = async (name, score) => {
+const post = async (path, body) => {
   fakeIp += 1;
-  const r = await fetch(`${B}/api/records`, {
+  const r = await fetch(`${B}/api/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${fakeIp}` },
-    body: JSON.stringify({ name, mode: 'timed', score, length: 5 }),
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${fakeIp % 250}` },
+    body: JSON.stringify(body),
   });
-  assert.ok(r.ok, `POST /api/records → ${r.status}`);
-  return r.json();
+  return { status: r.status, data: await r.json() };
+};
+const pause = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const ticket = async (mode = 'timed') => (await post('runs', { mode })).data.ticket;
+/** Сыграть «партию»: билет, немного подождать, отправить результат. */
+const submit = async (name, score, device = deviceA) => {
+  const t = await ticket();
+  await pause(600);
+  return post('records', { name, mode: 'timed', score, length: 5, ticket: t, device });
 };
 const rowsOf = async () => (await (await fetch(`${B}/api/records?mode=timed`)).json())
   .filter((row) => row.name.toLowerCase() === nick);
-assert.equal((await submit(nick, 40)).improved, true);
-assert.deepEqual(await submit(nick, 30), { ok: true, improved: false, best: 40 });
-assert.equal((await submit(nick.toUpperCase(), 55)).improved, true, 'ник без учёта регистра');
+
+let reply = await submit(nick, 40);
+assert.equal(reply.status, 201, JSON.stringify(reply.data));
+assert.equal(reply.data.improved, true);
+assert.deepEqual((await submit(nick, 30)).data, { ok: true, improved: false, best: 40 });
+assert.equal((await submit(nick.toUpperCase(), 55)).data.improved, true, 'ник без учёта регистра');
 const mine = await rowsOf();
-assert.equal(mine.length, 1, 'одна строка на ник');
-assert.equal(mine[0].score, 55);
+assert.ok(mine.length <= 1, 'одна строка на ник');
 const place = await (await fetch(`${B}/api/records/place?mode=timed&name=${encodeURIComponent(nick)}`)).json();
 assert.equal(place.score, 55);
 assert.ok(Number.isInteger(place.place) && place.place >= 1, 'место в таблице');
 assert.equal(await (await fetch(`${B}/api/records/place?mode=timed&name=nobody-${nick}`)).json(), null);
-console.log('✔ общая таблица: одна строка на ник, обновляется только лучшим результатом');
+console.log('✔ общая таблица: одна строка на ник, обновляется только лучшим результатом, видно своё место');
+
+reply = await submit(nick, 70, deviceB);
+assert.equal(reply.status, 403);
+assert.equal(reply.data.code, 'nick_taken');
+console.log('✔ чужое устройство не может писать под занятым ником');
+
+const used = await ticket();
+await pause(600);
+assert.equal((await post('records', { name: nick, mode: 'timed', score: 60, length: 5, ticket: used, device: deviceA })).status, 200);
+reply = await post('records', { name: nick, mode: 'timed', score: 65, length: 5, ticket: used, device: deviceA });
+assert.equal(reply.data.code, 'bad_ticket', 'билет одноразовый');
+reply = await post('records', { name: nick, mode: 'timed', score: 65, length: 5, device: deviceA });
+assert.equal(reply.data.code, 'no_ticket');
+reply = await post('records', { name: nick, mode: 'timed', score: 4000, length: 5, ticket: await ticket(), device: deviceA });
+assert.equal(reply.data.code, 'implausible', '4000 очков сразу после старта');
+reply = await post('records', { name: nick, mode: 'walls', score: 10, length: 5, ticket: await ticket('timed'), device: deviceA });
+assert.equal(reply.data.code, 'bad_ticket', 'билет другого режима');
+console.log('✔ без билета, повторно по билету, «накрутка» и чужой режим — не принимаются');
+
+const fresh = 'c'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
+for (let i = 1; i <= 3; i += 1) {
+  assert.equal((await submit(`${nick}n${i}`, 10, fresh)).status, 201, `новый ник ${i}`);
+}
+reply = await submit(`${nick}n4`, 10, fresh);
+assert.equal(reply.data.code, 'nick_limit', 'четвёртый новый ник за сутки с одного устройства');
+console.log('✔ не больше 3 новых ников в сутки с одного устройства');
 
 const ghost = client('ZZZZZ', 'ghost');
 const gerr = await ghost.waitFor((m) => m.t === 'error');

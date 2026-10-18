@@ -5,21 +5,33 @@
  *   GET  /api/rooms/:code/ws        — WebSocket игрока (Durable Object Room)
  *   GET  /api/records?mode=classic  — топ-10 общей таблицы (по строке на ник)
  *   GET  /api/records/place?mode=classic&name=… — место и лучший результат ника {place, score, length} или null
- *   POST /api/records               — рекорд игрока: в таблице одна строка на ник,
- *                                     обновляется, только если результат лучше
+ *   POST /api/runs                  — билет партии {mode} → {ticket}: выдаётся при старте
+ *                                     одиночной игры, по нему можно отправить один результат
+ *   POST /api/records               — рекорд игрока {name, mode, score, length, comment, ticket, device}:
+ *                                     в таблице одна строка на ник, обновляется, только если
+ *                                     результат лучше; ник принадлежит устройству (device),
+ *                                     счёт проверяется на правдоподобие по времени партии
  *   POST /api/feedback              — оставить отзыв (читает только владелец, в D1)
  *   GET  /api/health                — проверка, что сервер жив
  */
 import {
   buildFeedback, buildRecord, nameKey, RECORD_MODES,
 } from '../../src/core/validate.js';
+import { checkRun, RUN_TTL_MS } from '../../src/core/fair-play.js';
 
 export { Room } from './room.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // без похожих 0/O, 1/I/L
 const CODE_RE = /^[A-Z0-9]{4,8}$/;
-const RECORD_COOLDOWN_S = 20;
 const FEEDBACK_COOLDOWN_S = 60;
+// Билеты партий: не больше RUNS_PER_WINDOW за RUNS_WINDOW_MS с одного адреса.
+const RUNS_PER_WINDOW = 60;
+const RUNS_WINDOW_MS = 10 * 60 * 1000;
+// Новые ники за сутки: с одного устройства и с одного адреса (общий Wi-Fi — щедрее).
+const NEW_NICKS_PER_DEVICE = 3;
+const NEW_NICKS_PER_ADDRESS = 10;
+const DEVICE_RE = /^[0-9a-f]{64}$/;
+const TICKET_RE = /^[0-9a-f-]{36}$/;
 const MAX_BODY_BYTES = 4096;
 
 function makeCode(length = 5) {
@@ -135,14 +147,100 @@ async function placeOf(request, env, url) {
   return json(row ?? null, 200, request, env);
 }
 
-async function addRecord(request, env) {
-  const record = buildRecord((await readJson(request)) ?? {});
-  if (!record) return json({ error: 'Некорректный рекорд.' }, 400, request, env);
+async function sha256(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Отказ с кодом: игра по коду решает, повторять ли отправку позже. */
+const refuse = (code, error, status, request, env) => json({ error, code }, status, request, env);
+
+/** Билет партии: выдаётся при старте одиночной игры. */
+async function startRun(request, env) {
+  const { mode } = (await readJson(request)) ?? {};
+  if (!RECORD_MODES.includes(mode)) return json({ error: 'unknown mode' }, 400, request, env);
   const hash = await clientHash(request, env);
-  if (await tooSoon(env, 'records', hash, RECORD_COOLDOWN_S)) {
-    return json({ error: 'Слишком часто. Попробуйте через полминуты.' }, 429, request, env);
+  const now = Date.now();
+  const recent = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM runs WHERE client_hash = ? AND issued_ms > ?')
+    .bind(hash, now - RUNS_WINDOW_MS)
+    .first();
+  if (recent.n >= RUNS_PER_WINDOW) return refuse('rate', 'Слишком много партий подряд. Передохните пару минут.', 429, request, env);
+  const ticket = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO runs (id, mode, client_hash, issued_ms) VALUES (?, ?, ?, ?)').bind(ticket, mode, hash, now),
+    // Служебная уборка: билеты старше суток больше не нужны.
+    env.DB.prepare('DELETE FROM runs WHERE issued_ms < ?').bind(now - 24 * 60 * 60 * 1000),
+  ]);
+  return json({ ticket }, 201, request, env);
+}
+
+/**
+ * Можно ли этому устройству писать под этим ником. Свободный ник занимается
+ * (с лимитом новых ников в сутки), занятый — только своим устройством.
+ * @returns {Promise<null | {code: string, error: string, status: number}>} null — можно
+ */
+async function claimNick(env, key, name, ownerHash, clientHashValue) {
+  const owner = await env.DB.prepare('SELECT owner_hash FROM nicks WHERE name_key = ?').bind(key).first();
+  if (owner) {
+    return owner.owner_hash === ownerHash ? null : {
+      code: 'nick_taken', status: 403, error: `Ник «${name}» уже занят другим игроком. Выберите другой в настройках.`,
+    };
   }
+  const day = "datetime('now', '-1 day')";
+  const counts = await env.DB
+    .prepare(`SELECT
+                (SELECT COUNT(*) FROM nicks WHERE owner_hash = ? AND created_at > ${day}) AS device,
+                (SELECT COUNT(*) FROM nicks WHERE client_hash = ? AND created_at > ${day}) AS address`)
+    .bind(ownerHash, clientHashValue)
+    .first();
+  if (counts.device >= NEW_NICKS_PER_DEVICE || counts.address >= NEW_NICKS_PER_ADDRESS) {
+    return { code: 'nick_limit', status: 429, error: 'Слишком много новых ников за сутки. Играйте под уже выбранным.' };
+  }
+  await env.DB
+    .prepare('INSERT OR IGNORE INTO nicks (name_key, owner_hash, client_hash) VALUES (?, ?, ?)')
+    .bind(key, ownerHash, clientHashValue)
+    .run();
+  // Два устройства могли занять ник одновременно — проверяем, чей он в итоге.
+  const now = await env.DB.prepare('SELECT owner_hash FROM nicks WHERE name_key = ?').bind(key).first();
+  return now?.owner_hash === ownerHash ? null : {
+    code: 'nick_taken', status: 403, error: `Ник «${name}» уже занят другим игроком. Выберите другой в настройках.`,
+  };
+}
+
+async function addRecord(request, env) {
+  const body = (await readJson(request)) ?? {};
+  const record = buildRecord(body);
+  if (!record) return json({ error: 'Некорректный рекорд.' }, 400, request, env);
+  if (typeof body.device !== 'string' || !DEVICE_RE.test(body.device)
+    || typeof body.ticket !== 'string' || !TICKET_RE.test(body.ticket)) {
+    return refuse('no_ticket', 'Результат не из партии на сайте — в общую таблицу не принят.', 400, request, env);
+  }
+  const hash = await clientHash(request, env);
+  const now = Date.now();
+
+  // 1. Билет: выдан этому режиму, ещё не использован, не просрочен.
+  const run = await env.DB.prepare('SELECT mode, issued_ms, used_ms FROM runs WHERE id = ?').bind(body.ticket).first();
+  if (!run || run.mode !== record.mode || run.used_ms != null || now - run.issued_ms > RUN_TTL_MS) {
+    return refuse('bad_ticket', 'Партия не найдена или уже отправлена — в общую таблицу не принята.', 400, request, env);
+  }
+  // 2. Счёт правдоподобен для времени, прошедшего с начала партии.
+  if (!checkRun({ score: record.score, elapsedMs: now - run.issued_ms }).ok) {
+    return refuse('implausible', 'Такой счёт невозможно набрать за это время — в общую таблицу не принят.', 400, request, env);
+  }
+  // 3. Ник принадлежит этому устройству (или свободен).
   const key = nameKey(record.name);
+  const denied = await claimNick(env, key, record.name, await sha256(body.device), hash);
+  if (denied) return refuse(denied.code, denied.error, denied.status, request, env);
+  // 4. Билет одноразовый: второй раз по нему ничего не запишется (и при одновременных запросах).
+  const used = await env.DB
+    .prepare('UPDATE runs SET used_ms = ? WHERE id = ? AND used_ms IS NULL')
+    .bind(now, body.ticket)
+    .run();
+  if (used.meta.changes !== 1) {
+    return refuse('bad_ticket', 'Партия уже отправлена.', 400, request, env);
+  }
+
   const best = await env.DB
     .prepare(`SELECT id, score FROM records WHERE mode = ? AND COALESCE(name_key, lower(trim(name))) = ?
               ORDER BY score DESC, created_at ASC LIMIT 1`)
@@ -206,6 +304,7 @@ export default {
       if (url.pathname === '/api/records' && request.method === 'GET') return await topRecords(request, env, url);
       if (url.pathname === '/api/records/place' && request.method === 'GET') return await placeOf(request, env, url);
       if (url.pathname === '/api/records' && request.method === 'POST') return await addRecord(request, env);
+      if (url.pathname === '/api/runs' && request.method === 'POST') return await startRun(request, env);
       if (url.pathname === '/api/feedback' && request.method === 'POST') return await addFeedback(request, env);
     } catch (err) {
       // В лог — только текст ошибки, без запроса и заголовков (там IP игрока).

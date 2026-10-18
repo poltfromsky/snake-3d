@@ -134,7 +134,10 @@ function play(create, message) {
   if (message) toast(message);
 }
 
-const startSolo = () => play(createSolo);
+const startSolo = () => play(() => {
+  saver.startRun(settings.mode); // билет партии для общей таблицы
+  return createSolo();
+});
 const startLocalDuel = () => play(() => new LocalDuelMode(fieldConfig()), 'WASD против стрелок!');
 
 function startBotDuel(level) {

@@ -28,8 +28,13 @@ export class Leaderboard {
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
-      // Сервер объясняет отказ по-русски (например, «слишком часто») — показываем как есть.
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // Сервер объясняет отказ по-русски — показываем как есть; code — для решения «повторять ли».
+      if (!res.ok) {
+        const err = new Error(data.error ?? `HTTP ${res.status}`);
+        err.code = data.code ?? null;
+        err.status = res.status;
+        throw err;
+      }
       return data;
     } finally {
       clearTimeout(timer);
@@ -40,6 +45,13 @@ export class Leaderboard {
   async top(mode) {
     if (!RECORD_MODES.includes(mode)) return [];
     return this.request(`records?mode=${encodeURIComponent(mode)}`);
+  }
+
+  /** Билет партии: берётся при старте одиночной игры, без него результат в таблицу не примут. */
+  async startRun(mode) {
+    if (!RECORD_MODES.includes(mode)) return null;
+    const { ticket } = await this.request('runs', { method: 'POST', body: { mode } });
+    return ticket ?? null;
   }
 
   /** Место ника в общей таблице: {place, score, length} или null, если он туда ещё не попадал. */
@@ -55,7 +67,8 @@ export class Leaderboard {
   async submitRecord(entry) {
     const record = buildRecord(entry);
     if (!record) throw new Error('Некорректный рекорд.');
-    const data = await this.request('records', { method: 'POST', body: record });
+    const body = { ...record, ticket: entry.ticket, device: entry.device };
+    const data = await this.request('records', { method: 'POST', body });
     return { improved: data.improved !== false, best: Number(data.best) || record.score };
   }
 

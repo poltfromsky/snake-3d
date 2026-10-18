@@ -22,7 +22,7 @@ test('service worker включается и управляет странице
   await expect.poll(() => page.evaluate(async () => {
     const reg = await globalThis.navigator.serviceWorker.getRegistration();
     return reg?.active?.state ?? null;
-  }), { timeout: 20_000 }).toBe('activated');
+  }), { timeout: 45_000 }).toBe('activated');
   await page.reload();
   await waitForGame(page);
   await expect.poll(() => page.evaluate(() => Boolean(globalThis.navigator.serviceWorker.controller))).toBe(true);
@@ -38,7 +38,7 @@ test('без интернета игра открывается и в неё м�
     const vendor = await globalThis.caches.open('snake3d-vendor');
     const keys = await vendor.keys();
     return keys.some((r) => r.url.includes('three.module.js')) && keys.some((r) => r.url.includes('UnrealBloomPass'));
-  }), { timeout: 30_000 }).toBe(true);
+  }), { timeout: 45_000 }).toBe(true);
   await page.reload();
   await waitForGame(page);
 

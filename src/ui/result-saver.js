@@ -6,13 +6,20 @@
  *   - Ник есть → формы нет. Новый личный рекорд уходит в общую таблицу кнопкой или сам
  *     (настройка «Рекорды в общую таблицу → Автоматически»). В таблице у ника одна строка —
  *     лучший результат, сервер обновляет её, только если новый результат лучше.
- *   - Не отправилось (нет сети, игра без интернета, слишком часто) — рекорд запоминается
- *     и уходит при следующем запуске или следующей партии.
+ *   - Не отправилось из-за сети — рекорд запоминается и уходит при следующем запуске
+ *     или следующей партии.
+ *
+ * Защита таблицы (сервер): в начале партии берётся билет, по нему принимается ровно один
+ * правдоподобный по времени результат; ник принадлежит устройству (секретный ключ на нём).
+ * Партия без связи с сервером в общую таблицу не попадает, но сохраняется в «Мои».
  */
 import {
-  addAttempt, clearPending, loadPending, personalBest, savePending, setPlayerName,
+  addAttempt, clearPending, deviceKey, loadPending, personalBest, savePending, setPlayerName,
 } from '../storage.js';
 import { $, serverMessage } from './dom.js';
+
+// Отказы, которые не исправит повторная отправка: показываем и забываем.
+const FINAL_REFUSALS = new Set(['nick_taken', 'nick_limit', 'implausible', 'bad_ticket', 'no_ticket']);
 
 /**
  * @param {object} deps
@@ -21,13 +28,20 @@ import { $, serverMessage } from './dom.js';
  * @param {() => void} deps.onChangeNick открыть настройки, чтобы сменить ник
  */
 export function createResultSaver({ settings, leaderboard, onChangeNick }) {
-  let current = null; // { mode, score, length, isBest } — последняя партия
+  let current = null; // { mode, score, length, isBest, ticket } — последняя партия
+  let runTicket = Promise.resolve(null); // билет текущей партии (если сервер ответил)
 
   function status(text) {
     $('#record-auto-status').textContent = text;
   }
 
   async function publish(entry, { quiet = false } = {}) {
+    if (!entry.ticket) {
+      // Без билета сервер не примет (партия без связи или очередь от прошлой версии).
+      clearPending(entry.mode, entry.score);
+      if (!quiet) status('Партия шла без связи с сервером — в общую таблицу не попадёт. В «Мои» она сохранена.');
+      return false;
+    }
     if (!quiet) status('Отправляем в общую таблицу…');
     try {
       const { improved, best } = await leaderboard.submitRecord(entry);
@@ -39,6 +53,11 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
       }
       return true;
     } catch (err) {
+      if (FINAL_REFUSALS.has(err.code)) {
+        clearPending(entry.mode, entry.score);
+        if (!quiet) status(err.message);
+        return false;
+      }
       savePending(entry);
       if (!quiet) status(`${serverMessage(err, 'Нет связи с сервером.')} Рекорд отправится сам, когда получится.`);
       return false;
@@ -71,11 +90,18 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
     const auto = allowAuto && canPublish && settings.autoSubmit === 'on';
     $('#record-publish').classList.toggle('hidden', !canPublish || auto);
     $('#btn-publish').disabled = false;
-    if (auto) publish(entryFor(current));
+    if (auto) current.ticketReady.then(() => publish(entryFor(current)));
   }
 
-  function entryFor({ mode, score, length }, comment = '') {
-    return { name: settings.playerName, mode, score, length, comment };
+  function entryFor({ mode, score, length, ticket }, comment = '') {
+    return {
+      name: settings.playerName, mode, score, length, comment, ticket, device: deviceKey(),
+    };
+  }
+
+  /** Новая одиночная партия: сразу берём билет у сервера (не дожидаясь, игра уже идёт). */
+  function startRun(mode) {
+    runTicket = leaderboard.enabled ? leaderboard.startRun(mode).catch(() => null) : Promise.resolve(null);
   }
 
   /**
@@ -84,7 +110,11 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
    */
   function finish({ mode, score, length }) {
     const isBest = addAttempt(mode, { score, length });
-    current = { mode, score, length, isBest };
+    current = {
+      mode, score, length, isBest, ticket: null,
+    };
+    const game = current;
+    game.ticketReady = runTicket.then((t) => { game.ticket = t; });
     $('#record-auto').classList.add('hidden');
     $('#record-form').classList.add('hidden');
     flushPending();
@@ -120,6 +150,7 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
     // Галочка «в общую таблицу» стояла — отправляем; сняли — оставляем кнопку на потом.
     if (toGlobal) {
       $('#record-publish').classList.add('hidden');
+      await current.ticketReady;
       await publish(entryFor(current, comment));
     }
   });
@@ -127,6 +158,7 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
   $('#btn-publish').addEventListener('click', async () => {
     if (!current) return;
     $('#btn-publish').disabled = true;
+    await current.ticketReady;
     const ok = await publish(entryFor(current, $('#record-auto-comment').value));
     if (ok) $('#record-publish').classList.add('hidden');
     else $('#btn-publish').disabled = false;
@@ -140,6 +172,7 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
   $('#btn-change-nick').addEventListener('click', onChangeNick);
 
   return {
+    startRun,
     finish,
     flushPending,
     /** Ник поменяли в настройках, пока был открыт экран итогов. */

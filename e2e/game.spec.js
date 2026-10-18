@@ -209,16 +209,17 @@ test.describe('рекорды', () => {
     const errors = await openGame(page, { playerName: nick, autoSubmit: 'on' });
     await uniqueSenderForRecords(page);
 
-    const first = await playSolo(page, 300);
+    // Счёт небольшой: сервер проверяет, что его можно набрать за время партии.
+    const first = await playSolo(page, 20);
     await expect(page.locator('#record-auto-status')).toHaveText(`В общей таблице: ${nick} — ${first}`);
     await expect(page.locator('#btn-publish')).toBeHidden();
 
-    // Хуже прошлого — не личный рекорд: в таблицу не отправляется, только в историю.
-    await playSolo(page, 100, '#screen-over [data-action="play"]');
+    // Хуже прошлого (почти без очков) — не личный рекорд: в таблицу не отправляется, только в историю.
+    await playSolo(page, 0, '#screen-over [data-action="play"]');
     await expect(page.locator('#record-auto-title')).toHaveText(`Ваш лучший результат: ${first}`);
     await expect(page.locator('#record-auto-status')).toHaveText('');
 
-    const best = await playSolo(page, 600, '#screen-over [data-action="play"]');
+    const best = await playSolo(page, first + 30, '#screen-over [data-action="play"]');
     await expect(page.locator('#record-auto-status')).toHaveText(`В общей таблице: ${nick} — ${best}`);
 
     await page.locator('#screen-over [data-action="menu"]').click();
@@ -247,9 +248,40 @@ test.describe('рекорды', () => {
     await expect(page.locator('#record-form')).toBeHidden();
     await expect(page.locator('#record-auto-name')).toHaveText('Удав');
 
-    await playSolo(page, 500, '#screen-over [data-action="play"]');
+    await playSolo(page, 50, '#screen-over [data-action="play"]');
     await expect(page.locator('#record-form')).toBeHidden();
     await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe('защита общей таблицы', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('накрутку сервер не принимает, а игрок видит понятное объяснение', async ({ page }, testInfo) => {
+    const nick = `Чест${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const errors = await openGame(page, { playerName: nick, autoSubmit: 'on' });
+    await uniqueSenderForRecords(page);
+    // 4000 очков за секунду — так сыграть невозможно.
+    await playSolo(page, 4000);
+    await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+    await expect(page.locator('#record-auto-status')).toHaveText(/невозможно набрать за это время/);
+    expect(errors).toEqual([]);
+  });
+
+  test('чужой ник занять нельзя: другое устройство получает отказ', async ({ browser }, testInfo) => {
+    const nick = `Мой${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const owner = await (await browser.newContext({ serviceWorkers: 'block' })).newPage();
+    await openGame(owner, { playerName: nick, autoSubmit: 'on' });
+    await uniqueSenderForRecords(owner);
+    await playSolo(owner, 20);
+    await expect(owner.locator('#record-auto-status')).toHaveText(/^В общей таблице:/);
+
+    const stranger = await (await browser.newContext({ serviceWorkers: 'block' })).newPage();
+    const errors = await openGame(stranger, { playerName: nick, autoSubmit: 'on' });
+    await uniqueSenderForRecords(stranger);
+    await playSolo(stranger, 30);
+    await expect(stranger.locator('#record-auto-status')).toHaveText(`Ник «${nick}» уже занят другим игроком. Выберите другой в настройках.`);
     expect(errors).toEqual([]);
   });
 });
