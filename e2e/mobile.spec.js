@@ -21,10 +21,12 @@ test.describe('телефон', () => {
     test.skip(!isMobile, 'сценарии для телефона');
   });
 
+  // Последний заказанный поворот, а если очередь уже пуста — текущее направление:
+  // на медленной машине змейка успевает сделать шаг между свайпом и проверкой.
   const lastTurn = (page, i = 0) => page.evaluate((idx) => {
     const g = globalThis.__snakeE2E.game;
     const p = g.players ? g.players[idx] : g;
-    return p.turnQueue.at(-1) ?? null;
+    return p.turnQueue.at(-1) ?? p.direction;
   }, i);
 
   test('ни один экран не вылезает за края телефона', async ({ page }) => {
@@ -65,7 +67,7 @@ test.describe('телефон', () => {
     await page.locator('#screen-menu [data-action="play"]').click();
     // Змейка в одиночной игре едет вправо; палец ведём вверх.
     await swipe(page, { x: 200, y: 500 }, [{ x: 200, y: 492 }]);
-    expect(await lastTurn(page), 'короткое движение — ещё не свайп').toBeNull();
+    expect(await lastTurn(page), 'короткое движение — ещё не свайп').toEqual({ x: 1, y: 0 });
     await swipe(page, { x: 200, y: 500 }, [{ x: 201, y: 470 }]);
     expect(await lastTurn(page)).toEqual({ x: 0, y: -1 });
     // Тем же пальцем дальше влево — второй поворот одним движением.
