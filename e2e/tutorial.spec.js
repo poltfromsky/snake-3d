@@ -46,12 +46,13 @@ test('новый игрок: обучение запускается само и
 
   await turnUp(page, isMobile);
   await expect.poll(() => step(page)).toBe(1);
-  await eatNext(page, 'apple');
-  await expect.poll(() => step(page)).toBe(2);
-  await eatNext(page, 'apple');
-  await expect.poll(() => step(page)).toBe(3);
-  await eatNext(page, 'slow');
-  await expect.poll(() => step(page)).toBe(4);
+  // Каждый шаг: змейка стоит, пока не нажмут «Понятно».
+  for (const [kind, next] of [['apple', 2], ['apple', 3], ['slow', 4]]) {
+    await expect(page.locator('#btn-tutorial-next')).toHaveText('Понятно');
+    await eatNext(page, kind);
+    await page.locator('#btn-tutorial-next').click();
+    await expect.poll(() => step(page)).toBe(next);
+  }
   await page.locator('#btn-tutorial-next').click();
   await expect(page.locator('#btn-tutorial-next')).toHaveText('Готово');
   await page.locator('#btn-tutorial-next').click();

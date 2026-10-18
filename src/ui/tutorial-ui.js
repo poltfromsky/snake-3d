@@ -27,8 +27,8 @@ export function createTutorialUI({ onNext, onSkip, onLayout }) {
       $('#tutorial-text').textContent = stepText(step, device);
       $('#tutorial-notice').textContent = '';
       const reading = step.goal === 'next';
-      $('#btn-tutorial-next').classList.toggle('hidden', !reading);
-      $('#btn-tutorial-next').textContent = step.id === 'done' ? 'Готово' : 'Дальше';
+      $('#btn-tutorial-next').classList.toggle('hidden', !reading && !mode.waiting);
+      $('#btn-tutorial-next').textContent = (step.id === 'done' && 'Готово') || (reading && 'Дальше') || 'Понятно';
       $('#btn-tutorial-skip').classList.toggle('hidden', step.id === 'done');
       onLayout();
     },

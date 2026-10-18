@@ -99,15 +99,35 @@ test('поле обучения одинаковое у всех: квадрат
   assert.deepEqual(a.game.snake, b.game.snake, 'змейка стартует в одном месте');
 });
 
-test('после поворота яблоко лежит на новом курсе, а не на старом', () => {
+test('после поворота яблоко впереди по новому курсу и в стороне — к нему надо повернуть', () => {
   const mode = new TutorialMode();
   events(mode);
   mode.steer('touch', 'UP');
   events(mode, 10); // шаг засчитан, змейка ещё не повернула
   assert.equal(mode.step.id, 'apple');
   const [apple] = mode.game.items;
-  assert.equal(apple.x, mode.game.head.x, 'яблоко прямо над головой');
-  assert.notEqual(apple.y, mode.game.head.y);
+  const { head } = mode.game;
+  assert.equal(apple.y, (head.y - 4 + 11) % 11, '4 клетки вперёд по новому курсу (вверх)');
+  assert.equal(apple.x, (head.x + 3) % 11, '3 клетки вбок');
+});
+
+test('в начале шага змейка стоит, пока игрок не нажмёт «Понятно» или не повернёт', () => {
+  const mode = new TutorialMode();
+  const start = { ...mode.game.head };
+  for (let i = 0; i < 10; i += 1) events(mode, 250);
+  assert.deepEqual(mode.game.head, start, 'шаг «поворот»: стоит');
+  mode.steer('touch', 'UP'); // поворот — и поехали
+  events(mode, 10);
+  assert.equal(mode.step.id, 'apple');
+  assert.equal(mode.waiting, true, 'новый шаг — снова ждёт');
+  const head = { ...mode.game.head };
+  for (let i = 0; i < 10; i += 1) events(mode, 250);
+  assert.deepEqual(mode.game.head, head, 'шаг «еда»: стоит, пока читают');
+  mode.next(); // «Понятно»
+  assert.ok(types(events(mode, 10)).includes('tutorialGo'));
+  for (let i = 0; i < 4; i += 1) events(mode, 250);
+  assert.notDeepEqual(mode.game.head, head, 'поехала');
+  assert.equal(mode.step.id, 'apple', '«Понятно» шаг не пропускает');
 });
 
 test('съел гниль на шаге «обойдите» — замечание; отравился насовсем — шаг заново', () => {
@@ -116,6 +136,7 @@ test('съел гниль на шаге «обойдите» — замечан�
   events(mode, 10);
   playUntilStepChanges(mode, ITEM.APPLE);
   assert.equal(mode.step.id, 'bad');
+  mode.next(); // «Понятно»
   // Едем прямо: гниль на пути. Каждая гниль — замечание; длина падает, в конце — отравление.
   const seen = [];
   for (let i = 0; i < 200 && !seen.includes('tutorialRetry'); i += 1) {

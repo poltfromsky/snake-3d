@@ -310,7 +310,11 @@ function handleEvents(events) {
         audio.play('levelUp');
         tutorialUI.render(mode, device());
         break;
+      case 'tutorialGo':
+        tutorialUI.render(mode, device()); // убрать «Понятно»
+        break;
       case 'tutorialRetry':
+        tutorialUI.render(mode, device()); // змейка снова ждёт «Понятно»
         tutorialUI.notice('Змейка разбилась — попробуем этот шаг ещё раз.');
         break;
       case 'tutorialBad':

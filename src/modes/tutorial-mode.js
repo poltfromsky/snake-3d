@@ -2,12 +2,16 @@
  * Обучение на настоящем поле — тот же интерфейс, что у остальных режимов
  * (src/modes/modes.js), поэтому игровой цикл, управление и сцена не меняются.
  *
+ * В начале каждого шага змейка стоит, пока игрок не нажмёт «Понятно» или не повернёт:
+ * иначе она успевала доехать до предмета раньше, чем человек дочитает задание.
+ *
  * Поле небольшое и одинаковое на всех устройствах, змейка медленная, предметы раскладывает сам режим — перед
  * змейкой, чтобы до них было пару шагов. Погибнуть нельзя насовсем: если змейка
  * разбилась или отравилась, шаг начинается заново.
  *
  * update(dt) возвращает события игры (еда — звук и частицы) и свои:
  *   {type: 'tutorialStep', index} — начался шаг index;
+ *   {type: 'tutorialGo'}          — змейка поехала (игрок прочитал задание);
  *   {type: 'tutorialRetry'}       — змейка погибла, шаг заново;
  *   {type: 'tutorialBad'}         — съедена гниль на шаге «обойдите гниль»;
  *   {type: 'tutorialDone'}        — обучение пройдено.
@@ -41,6 +45,7 @@ export class TutorialMode {
     this.pending = [{ type: 'tutorialStep', index: 0 }];
     this.newGame();
     this.placeItems();
+    this.waiting = true;
   }
 
   get step() {
@@ -81,14 +86,15 @@ export class TutorialMode {
     const item = (kind, cell) => ({ kind, ...cell, ttl: null });
     switch (this.step?.id) {
       case 'apple':
-        g.items = [item(ITEM.APPLE, this.cellAhead(4))];
+        // В стороне от курса: чтобы съесть, надо самому повернуть.
+        g.items = [item(ITEM.APPLE, this.cellAhead(4, 3))];
         break;
       case 'bad':
         // Гниль прямо по курсу, яблоко — в стороне: чтобы его съесть, гниль надо обойти.
         g.items = [item(ITEM.BAD, this.cellAhead(3)), item(ITEM.APPLE, this.cellAhead(5, 2))];
         break;
       case 'bonus':
-        g.items = [item(ITEM.SLOW, this.cellAhead(4))];
+        g.items = [item(ITEM.SLOW, this.cellAhead(4, -3))];
         break;
       case 'danger':
         g.items = [];
@@ -107,12 +113,22 @@ export class TutorialMode {
       return;
     }
     this.placeItems();
+    this.waiting = this.step.goal !== 'next';
     this.pending.push({ type: 'tutorialStep', index: this.index });
   }
 
-  /** «Дальше» на шагах, где нужно только прочитать. */
+  /** Змейка трогается: задание прочитано. */
+  go() {
+    if (!this.waiting) return;
+    this.waiting = false;
+    this.pending.push({ type: 'tutorialGo' });
+  }
+
+  /** «Понятно» — змейка поехала; «Дальше» на шагах, где нужно только прочитать. */
   next() {
-    if (!this.done && this.step.goal === 'next') this.advance();
+    if (this.done) return;
+    if (this.waiting) this.go();
+    else if (this.step.goal === 'next') this.advance();
   }
 
   get view() { return this.game; }
@@ -123,12 +139,13 @@ export class TutorialMode {
     const out = this.pending;
     this.pending = [];
     if (this.done) return out;
-    // На шагах «прочитать» змейка стоит — текст можно спокойно дочитать.
-    const events = this.step.goal === 'next' ? [] : this.game.update(dt);
+    // На шагах «прочитать» и до «Понятно» змейка стоит — текст можно спокойно дочитать.
+    const events = this.step.goal === 'next' || this.waiting ? [] : this.game.update(dt);
     for (const e of events) {
       if (e.type === 'gameOver') {
         this.newGame();
         this.placeItems();
+        this.waiting = true;
         out.push({ type: 'tutorialRetry' });
         return out;
       }
@@ -157,7 +174,9 @@ export class TutorialMode {
   }
 
   steer(_device, dir) {
-    if (!this.done && this.step.goal !== 'next') this.game.turn(DIRECTIONS[dir]);
+    if (this.done || this.step.goal === 'next') return;
+    this.game.turn(DIRECTIONS[dir]);
+    this.go(); // поворот — тоже знак, что игрок готов
   }
 
   playerName() { return 'Вы'; }
