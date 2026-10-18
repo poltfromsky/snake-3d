@@ -43,9 +43,14 @@ const shakeOffset = new THREE.Vector3();
 const shakeTarget = new THREE.Vector3();
 
 export class SceneRenderer {
-  constructor(canvas) {
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {{maxPixelRatio?: number}} [options] предел чёткости: 2 — для экранов телефонов;
+   *   автотесты ставят 1 — им важна логика, а не чёткость, и программный рендер в CI не захлёбывается
+   */
+  constructor(canvas, { maxPixelRatio = 2 } = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;

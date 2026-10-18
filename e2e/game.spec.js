@@ -93,9 +93,20 @@ test('онлайн: комната по ссылке, оба видят итог
 
   const errorsB = await openGameFromLink(b, `${link}&e2e`, { playerName: 'Удав' });
   // Режим «Стены», без поворотов: змейки одновременно врезаются в противоположные стены.
-  for (const page of [a, b]) {
-    await expect(page.locator('#screen-duel')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('#duel-title')).toHaveText('Ничья');
+  try {
+    for (const page of [a, b]) {
+      await expect(page.locator('#screen-duel')).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('#duel-title')).toHaveText('Ничья');
+    }
+  } catch (err) {
+    // Чтобы по логу CI было видно, где застрял каждый игрок.
+    const where = (page) => page.evaluate(() => ({
+      state: globalThis.__snakeE2E?.state,
+      kind: globalThis.__snakeE2E?.kind,
+      online: globalThis.document.querySelector('#online-status')?.textContent,
+    }));
+    console.log('онлайн: хозяин', JSON.stringify(await where(a)), 'гость', JSON.stringify(await where(b)));
+    throw err;
   }
   // Каждый видит себя как «Вы», соперника — по нику (счёт зависит от съеденных яблок).
   await expect(a.locator('#duel-s0')).toHaveText(/^Вы \d+$/);

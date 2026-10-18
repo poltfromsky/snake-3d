@@ -61,7 +61,9 @@ const settings = loadSettings();
 const tutorial = loadTutorial();
 const audio = new AudioManager();
 audio.setVolumes(settings);
-const renderer = new SceneRenderer($('#scene'));
+// В автотестах (?e2e) — обычная чёткость: телефонный экран в 2–3 раза чётче, а рисует его
+// в CI программный рендер без видеокарты. На игроков это не влияет.
+const renderer = new SceneRenderer($('#scene'), { maxPixelRatio: E2E ? 1 : 2 });
 const leaderboard = new Leaderboard(API_BASE);
 const achievements = new AchievementBook();
 const achievementToasts = new AchievementToasts(
