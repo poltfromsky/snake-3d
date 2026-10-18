@@ -63,6 +63,9 @@ let replay = null; // как начать такую же партию зано�
 let screen = 'menu'; // какой оверлей сейчас виден (null — только игра)
 let backTo = 'menu'; // куда ведёт «Назад» с рекордов, настроек и т. п.
 let lastTime = performance.now();
+// Итог последней дуэли: ник соперника может прийти по сети позже конца партии
+// (медленный телефон, плохая связь) — тогда подписи перерисовываются.
+let lastDuel = null;
 
 /* ---------------- Режимы ---------------- */
 
@@ -174,16 +177,23 @@ function soloOver(reason) {
   showLater('over', () => { if (canSave) $('#record-name').focus(); });
 }
 
-function duelOver(event) {
-  app.go(OVER);
-  audio.setIntensity(0);
-  renderer.shakeCamera(0.8);
-  const summary = duelSummary(event, mode.duelResult(event), mode);
-  audio.play(summary.sound);
+/** Подписи экрана итогов дуэли по последнему результату и текущим именам игроков. */
+function renderDuelResult() {
+  const summary = duelSummary(lastDuel.event, lastDuel.details, mode);
   $('#duel-title').textContent = summary.title;
   $('#duel-reason').textContent = summary.reason;
   $('#duel-s0').textContent = summary.left;
   $('#duel-s1').textContent = summary.right;
+  return summary;
+}
+
+function duelOver(event) {
+  app.go(OVER);
+  audio.setIntensity(0);
+  renderer.shakeCamera(0.8);
+  lastDuel = { event, details: mode.duelResult(event) };
+  const summary = renderDuelResult();
+  audio.play(summary.sound);
   $('#duel-status').textContent = '';
   showLater('duel');
 
@@ -300,6 +310,9 @@ function handleNetMessage(msg, connection) {
     case 'go':
       countdownTick(0);
       beginPlaying();
+      break;
+    case 'names':
+      if (app.is(OVER) && lastDuel) renderDuelResult();
       break;
     case 'rematch':
       $('#duel-status').textContent = action.mine ? 'Ждём ответа соперника…' : `${opponentName()} хочет реванш!`;
