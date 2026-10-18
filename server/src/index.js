@@ -24,8 +24,9 @@ export { Room } from './room.js';
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // без похожих 0/O, 1/I/L
 const CODE_RE = /^[A-Z0-9]{4,8}$/;
 const FEEDBACK_COOLDOWN_S = 60;
-// Билеты партий: не больше RUNS_PER_WINDOW за RUNS_WINDOW_MS с одного адреса.
-const RUNS_PER_WINDOW = 60;
+// Билеты партий: не больше RUNS_PER_WINDOW за RUNS_WINDOW_MS с одного адреса. С запасом:
+// через один адрес играют целые школы и общежития (и автотесты всех браузеров разом).
+const RUNS_PER_WINDOW = 300;
 const RUNS_WINDOW_MS = 10 * 60 * 1000;
 // Новые ники за сутки: с одного устройства и с одного адреса (общий Wi-Fi — щедрее).
 const NEW_NICKS_PER_DEVICE = 3;

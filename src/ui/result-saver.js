@@ -29,13 +29,20 @@ const FINAL_REFUSALS = new Set(['nick_taken', 'nick_limit', 'implausible', 'bad_
  */
 export function createResultSaver({ settings, leaderboard, onChangeNick }) {
   let current = null; // { mode, score, length, isBest, ticket } — последняя партия
-  let runTicket = Promise.resolve(null); // билет текущей партии (если сервер ответил)
+  // Билет текущей партии: {ticket} или {ticket: null, error} — почему сервер его не дал.
+  let runTicket = Promise.resolve({ ticket: null, error: null });
 
   function status(text) {
     $('#record-auto-status').textContent = text;
   }
 
   async function publish(entry, { quiet = false } = {}) {
+    if (!entry.ticket && entry.ticketError) {
+      // Сервер отказал в билете (например, слишком много партий подряд) — говорим как есть.
+      clearPending(entry.mode, entry.score);
+      if (!quiet) status(`${entry.ticketError} Результат сохранён в «Мои».`);
+      return false;
+    }
     if (!entry.ticket) {
       // Без билета сервер не примет (партия без связи или очередь от прошлой версии).
       clearPending(entry.mode, entry.score);
@@ -93,15 +100,23 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
     if (auto) current.ticketReady.then(() => publish(entryFor(current)));
   }
 
-  function entryFor({ mode, score, length, ticket }, comment = '') {
+  function entryFor({
+    mode, score, length, ticket, ticketError,
+  }, comment = '') {
     return {
-      name: settings.playerName, mode, score, length, comment, ticket, device: deviceKey(),
+      name: settings.playerName, mode, score, length, comment, ticket, ticketError, device: deviceKey(),
     };
   }
 
   /** Новая одиночная партия: сразу берём билет у сервера (не дожидаясь, игра уже идёт). */
   function startRun(mode) {
-    runTicket = leaderboard.enabled ? leaderboard.startRun(mode).catch(() => null) : Promise.resolve(null);
+    runTicket = leaderboard.enabled
+      ? leaderboard.startRun(mode).then(
+        (ticket) => ({ ticket, error: null }),
+        // Сеть недоступна — молчим (партия «без связи»); сервер отказал — запоминаем его слова.
+        (err) => ({ ticket: null, error: err?.status ? serverMessage(err, null) : null }),
+      )
+      : Promise.resolve({ ticket: null, error: null });
   }
 
   /**
@@ -111,10 +126,13 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
   function finish({ mode, score, length }) {
     const isBest = addAttempt(mode, { score, length });
     current = {
-      mode, score, length, isBest, ticket: null,
+      mode, score, length, isBest, ticket: null, ticketError: null,
     };
     const game = current;
-    game.ticketReady = runTicket.then((t) => { game.ticket = t; });
+    game.ticketReady = runTicket.then(({ ticket, error }) => {
+      game.ticket = ticket;
+      game.ticketError = error;
+    });
     $('#record-auto').classList.add('hidden');
     $('#record-form').classList.add('hidden');
     flushPending();

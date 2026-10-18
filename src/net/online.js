@@ -8,6 +8,10 @@
 
 const PING_EVERY_MS = 15000;
 const CONNECT_TIMEOUT_MS = 10000;
+// Сервер уже принял соединение, а ответа «вы в комнате» ещё нет — страница могла подвиснуть
+// (тяжёлая загрузка на слабом телефоне). Тогда ждём дольше, но не бесконечно.
+const JOIN_WAIT_MS = 30000;
+const JOIN_RECHECK_MS = 2000;
 
 export function normalizeRoomCode(raw) {
   return String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -60,10 +64,18 @@ export class RoomConnection {
         settled = true;
         reject(new Error(text));
       };
-      const timer = setTimeout(() => {
+      const started = Date.now();
+      let timer = null;
+      const check = () => {
+        if (settled) return;
+        if (this.socket?.readyState === WebSocket.OPEN && Date.now() - started < JOIN_WAIT_MS) {
+          timer = setTimeout(check, JOIN_RECHECK_MS);
+          return;
+        }
         fail('Сервер не отвечает. Для онлайн-игры включите VPN.');
         this.close();
-      }, CONNECT_TIMEOUT_MS);
+      };
+      timer = setTimeout(check, CONNECT_TIMEOUT_MS);
 
       this.socket = new WebSocket(this.url);
       this.socket.addEventListener('message', (event) => {
