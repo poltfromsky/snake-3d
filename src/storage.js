@@ -13,6 +13,7 @@ const HISTORY_KEY = 'snake3d.history.v1';
 const PENDING_KEY = 'snake3d.pending.v1';
 const DEVICE_KEY = 'snake3d.device.v1';
 const TUTORIAL_KEY = 'snake3d.tutorial.v1';
+const SEEN_VERSION_KEY = 'snake3d.seen-version.v1';
 /** Сколько раз перед «Играть» предлагаем обучение, если его не прошли. Дальше — только плашка в меню. */
 export const TUTORIAL_OFFERS = 3;
 const MAX_HISTORY = 100;
@@ -121,6 +122,16 @@ export function loadTutorial() {
 
 export function saveTutorial(state) {
   write(TUTORIAL_KEY, state);
+}
+
+/** Версия, «Что нового» которой игрок уже видел (null — новый игрок). */
+export function loadSeenVersion() {
+  const v = read(SEEN_VERSION_KEY, null);
+  return typeof v === 'string' ? v : null;
+}
+
+export function saveSeenVersion(version) {
+  write(SEEN_VERSION_KEY, version);
 }
 
 /** Совсем новый игрок: ничего не сохранял и обучение ему ещё не показывали. */

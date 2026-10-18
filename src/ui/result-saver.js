@@ -17,6 +17,7 @@ import {
   addAttempt, clearPending, deviceKey, loadPending, personalBest, savePending, setPlayerName,
 } from '../storage.js';
 import { $, serverMessage } from './dom.js';
+import { iconSvg } from './icons.js';
 
 // Отказы, которые не исправит повторная отправка: показываем и забываем.
 const FINAL_REFUSALS = new Set(['nick_taken', 'nick_limit', 'implausible', 'bad_ticket', 'no_ticket']);
@@ -89,7 +90,9 @@ export function createResultSaver({ settings, leaderboard, onChangeNick }) {
     $('#record-form').classList.add('hidden');
     $('#record-auto').classList.remove('hidden');
     $('#record-auto-name').textContent = settings.playerName;
-    $('#record-auto-title').textContent = isBest ? '★ Новый личный рекорд!' : `Ваш лучший результат: ${personalBest(mode)}`;
+    const title = $('#record-auto-title');
+    title.replaceChildren(isBest ? 'Новый личный рекорд!' : `Ваш лучший результат: ${personalBest(mode)}`);
+    if (isBest) title.prepend(iconSvg('star'));
     $('#record-auto-comment').value = '';
     $('#record-auto-comment').classList.add('hidden');
     status('');

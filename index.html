@@ -69,13 +69,16 @@
     <div class="panel">
       <!-- Обучение ещё не пройдено: плашка висит, пока его не пройдут. -->
       <div id="tutorial-banner" class="update-banner hidden" role="status">
-        <span>🎓 Вы ещё не прошли обучение — это 1 минута</span>
+        <span><span class="ic" data-icon="cap"></span>Вы ещё не прошли обучение — это 1 минута</span>
         <button class="btn primary" data-action="tutorial">Пройти</button>
       </div>
       <!-- Новая версия скачана в фоне: включается по кнопке, только из меню. -->
       <div id="update-banner" class="update-banner hidden" role="status">
-        <span>Вышла новая версия игры</span>
-        <button class="btn primary" data-action="update">Обновить</button>
+        <span id="update-text">Вышла новая версия игры</span>
+        <span class="update-actions">
+          <button type="button" class="btn hidden" id="btn-whats-new-update">Что нового</button>
+          <button class="btn primary" data-action="update">Обновить</button>
+        </span>
       </div>
       <h1>Изгиб<br><span>Питона</span> 3D</h1>
       <p class="subtitle">Классическая змейка в трёх измерениях</p>
@@ -106,11 +109,11 @@
         <button class="btn" data-action="achievements">Достижения</button>
         <button class="btn" data-action="settings">Настройки</button>
       </div>
-      <button class="btn link-btn online-only hidden" data-action="feedback">💬 Оставить отзыв об игре</button>
-      <button class="btn link-btn hidden" id="btn-install" data-action="install">📲 Установить как приложение</button>
+      <button class="btn link-btn online-only hidden" data-action="feedback"><span class="ic" data-icon="chat"></span>Оставить отзыв об игре</button>
+      <button class="btn link-btn hidden" id="btn-install" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
       <details class="howto" open>
         <summary>Как играть</summary>
-        <button class="btn link-btn" data-action="tutorial">🎓 Пройти обучение — 1 минута</button>
+        <button class="btn link-btn" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение — 1 минута</button>
         <div class="howto-grid">
           <section aria-labelledby="howto-controls">
             <h3 id="howto-controls">Управление</h3>
@@ -138,6 +141,8 @@
         </div>
       </details>
       <p class="credits" id="music-credits"></p>
+      <p class="app-version"><span id="app-version"></span> ·
+        <button type="button" class="text-btn" data-action="whats-new">Что нового</button><span id="whats-new-dot" class="dot-new hidden" aria-label="есть новое"></span></p>
     </div>
   </section>
 
@@ -177,8 +182,8 @@
           <input id="record-auto-comment" class="hidden" maxlength="200" autocomplete="off"
             placeholder="Комментарий к рекорду (необязательно)" aria-label="Комментарий к рекорду">
           <div class="row">
-            <button type="button" class="btn" id="btn-publish">🌍 В общую таблицу</button>
-            <button type="button" class="btn" id="btn-add-comment">💬 Комментарий</button>
+            <button type="button" class="btn" id="btn-publish"><span class="ic" data-icon="globe"></span>В общую таблицу</button>
+            <button type="button" class="btn" id="btn-add-comment"><span class="ic" data-icon="chat"></span>Комментарий</button>
           </div>
         </div>
         <p id="record-auto-status" class="status" aria-live="polite"></p>
@@ -238,9 +243,19 @@
       <p class="subtitle">Откроется на весь экран, без панелей браузера, и будет работать даже без интернета (одиночная игра).</p>
       <ol class="install-steps">
         <li>Откройте игру в <b>Safari</b> (из Telegram: «⋯» → «Открыть в Safari»).</li>
-        <li>Нажмите <b>«Поделиться»</b> <span aria-hidden="true">⬆︎</span> внизу экрана.</li>
+        <li>Нажмите <b>«Поделиться»</b> <span class="ic" data-icon="share"></span> внизу экрана.</li>
         <li>Выберите <b>«На экран „Домой“»</b> и нажмите «Добавить».</li>
       </ol>
+      <button class="btn" data-action="back">Понятно</button>
+    </div>
+  </section>
+
+  <!-- Что нового: изменения для игроков (changelog.json) -->
+  <section id="screen-whats-new" class="screen hidden">
+    <div class="panel">
+      <h2 id="whats-new-title">Что нового</h2>
+      <div id="whats-new-list" class="whats-new"></div>
+      <button class="btn primary hidden" id="btn-update-now" data-action="update">Обновить сейчас</button>
       <button class="btn" data-action="back">Понятно</button>
     </div>
   </section>
@@ -250,7 +265,7 @@
     <div class="panel small">
       <h2>Сначала обучение?</h2>
       <p class="subtitle">Одна минута — и понятно, как поворачивать, что можно есть и чего избегать.</p>
-      <button class="btn primary" data-action="tutorial">🎓 Пройти обучение</button>
+      <button class="btn primary" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение</button>
       <button class="btn" data-action="play-anyway">Играть без обучения</button>
     </div>
   </section>
@@ -292,7 +307,7 @@
     <div class="panel">
       <h2>Рекорды</h2>
       <div class="segmented compact online-only hidden" id="records-scope">
-        <button data-scope="global">🌍 Общие</button>
+        <button data-scope="global"><span class="ic" data-icon="globe"></span>Общие</button>
         <button data-scope="local">Мои</button>
       </div>
       <div class="segmented" id="records-tabs">
@@ -365,8 +380,11 @@
           <button data-value="on">Автоматически</button>
         </div>
       </div>
+      <div class="field">Версия игры <b id="settings-version"></b>
+        <button class="btn" data-action="whats-new">История обновлений</button>
+      </div>
       <div class="field">Обучение
-        <button class="btn" data-action="tutorial">🎓 Пройти обучение заново</button>
+        <button class="btn" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение заново</button>
       </div>
       <div class="field touch-only">Управление
         <div class="segmented compact" id="set-controls">

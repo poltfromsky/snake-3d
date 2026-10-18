@@ -3,9 +3,10 @@
  */
 import { THEMES } from '../render/scene.js';
 import { $, setHtml } from './dom.js';
+import { iconHtml } from './icons.js';
 
 const SCREENS = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install',
-  'tutorial-offer', 'tutorial-done'];
+  'tutorial-offer', 'tutorial-done', 'whats-new'];
 // Поверх каких экранов виден HUD (null — игра без оверлея).
 const WITH_HUD = new Set([null, 'pause', 'over', 'duel']);
 
@@ -70,8 +71,8 @@ export function renderHud(mode, themeId) {
   $('#hud-length').textContent = data.length;
   $('#hud-level').textContent = data.level;
   const effects = [];
-  if (data.effects.slow > 0) effects.push(`<span class="effect slow">🐢 ${Math.ceil(data.effects.slow / 1000)}</span>`);
-  if (data.effects.ghost > 0) effects.push(`<span class="effect ghost">👻 ${Math.ceil(data.effects.ghost / 1000)}</span>`);
+  if (data.effects.slow > 0) effects.push(`<span class="effect slow">${iconHtml('slow')} ${Math.ceil(data.effects.slow / 1000)}</span>`);
+  if (data.effects.ghost > 0) effects.push(`<span class="effect ghost">${iconHtml('ghost')} ${Math.ceil(data.effects.ghost / 1000)}</span>`);
   setHtml($('#hud-effects'), effects.join(''));
 }
 

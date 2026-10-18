@@ -1,10 +1,11 @@
 /**
  * Экран «Рекорды»:
  *   «Общие» — общая таблица: у каждого ника одна строка, его лучший результат;
- *   «Мои»   — все свои попытки на этом устройстве, новые сверху, лучшая отмечена ★.
+ *   «Мои»   — все свои попытки на этом устройстве, новые сверху, лучшая отмечена звездой.
  */
 import { loadHistory, personalBest } from '../storage.js';
 import { $, markActive } from './dom.js';
+import { iconSvg } from './icons.js';
 
 /**
  * @param {object} deps
@@ -78,7 +79,8 @@ export function createRecordsScreen({ settings, leaderboard }) {
       }
       label.textContent = a.date ? dateTime(a.date) : 'раньше';
       const score = document.createElement('b');
-      score.textContent = isBest ? `★ ${a.score}` : a.score;
+      score.textContent = a.score;
+      if (isBest) score.prepend(iconSvg('star'));
       const meta = document.createElement('small');
       meta.textContent = `длина ${a.length}`;
       li.append(label, score, meta);

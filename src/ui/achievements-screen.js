@@ -1,5 +1,6 @@
 /** Экран «Достижения» и кубки на кнопках побеждённых ботов. */
 import { $ } from './dom.js';
+import { iconSvg } from './icons.js';
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -17,7 +18,7 @@ export function renderAchievements(book) {
     li.className = `${a.rarity}${a.unlockedAt ? '' : ' locked'}`;
     const icon = document.createElement('div');
     icon.className = 'achievement-icon';
-    icon.textContent = a.unlockedAt ? a.icon : '🔒';
+    icon.append(iconSvg(a.unlockedAt ? a.icon : 'lock'));
     const title = document.createElement('b');
     title.textContent = a.title;
     const desc = document.createElement('span');

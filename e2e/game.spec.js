@@ -158,7 +158,8 @@ test('ник вводится один раз: из настроек — в ит
   await expect(page.locator('#record-form')).toBeHidden();
   await expect(page.locator('#record-auto')).toBeVisible();
   await expect(page.locator('#record-auto-name')).toHaveText('Питон');
-  await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+  await expect(page.locator('#record-auto-title')).toHaveText('Новый личный рекорд!');
+  await expect(page.locator('#record-auto-title svg')).toHaveCount(1); // звезда — своя иконка
   await expect(page.locator('#btn-publish')).toBeVisible();
 
   await page.locator('#screen-over [data-action="menu"]').click();
@@ -243,7 +244,8 @@ test.describe('рекорды', () => {
 
     await page.locator('#records-scope [data-scope="local"]').click();
     await expect(page.locator('#records-list li')).toHaveCount(3);
-    await expect(page.locator('#records-list li.best b')).toHaveText(`★ ${best}`);
+    await expect(page.locator('#records-list li.best b')).toHaveText(`${best}`);
+    await expect(page.locator('#records-list li.best b svg')).toHaveCount(1); // звезда — иконка
     await expect(page.locator('#records-me')).toBeHidden();
     expect(errors).toEqual([]);
   });
@@ -261,7 +263,7 @@ test.describe('рекорды', () => {
 
     await playSolo(page, 50, '#screen-over [data-action="play"]');
     await expect(page.locator('#record-form')).toBeHidden();
-    await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+    await expect(page.locator('#record-auto-title')).toHaveText('Новый личный рекорд!');
     expect(errors).toEqual([]);
   });
 });
@@ -275,7 +277,7 @@ test.describe('защита общей таблицы', () => {
     await uniqueSenderForRecords(page);
     // 4000 очков за секунду — так сыграть невозможно.
     await playSolo(page, 4000);
-    await expect(page.locator('#record-auto-title')).toHaveText('★ Новый личный рекорд!');
+    await expect(page.locator('#record-auto-title')).toHaveText('Новый личный рекорд!');
     await expect(page.locator('#record-auto-status')).toHaveText(/невозможно набрать за это время/);
     expect(errors).toEqual([]);
   });

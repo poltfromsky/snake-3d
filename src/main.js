@@ -38,6 +38,8 @@ import { createSettingsScreen } from './ui/settings-screen.js';
 import { isTouchDevice, WakeLock } from './ui/device.js';
 import { createFirstHints } from './ui/first-hints.js';
 import { createTutorialUI } from './ui/tutorial-ui.js';
+import { renderIcons } from './ui/icons.js';
+import { createWhatsNew } from './ui/whats-new.js';
 
 const { MENU, LOBBY, COUNTDOWN, PLAYING, PAUSED, OVER } = STATES;
 
@@ -622,6 +624,7 @@ const ACTIONS = {
     show('settings');
   },
   install: () => installer.install(),
+  'whats-new': () => whatsNew.showHistory(),
   update: () => updater.applyUpdate(),
   back: () => {
     if (backTo === 'menu') toMenu();
@@ -648,12 +651,14 @@ const installer = setupInstall({
   setVisible: (visible) => $('#btn-install').classList.toggle('hidden', !visible),
   showIOSHelp: () => openFromMenu('install'),
 });
+const whatsNew = createWhatsNew({ version: APP_VERSION, open: (name) => openFromMenu(name) });
 const updater = registerServiceWorker({
-  onUpdateReady: () => $('#update-banner').classList.remove('hidden'),
+  onUpdateReady: () => whatsNew.onUpdateReady(),
   // Локально service worker нужен только автотестам, при обычной разработке он не включается.
   enabled: E2E || !['localhost', '127.0.0.1'].includes(window.location.hostname),
 });
 
+renderIcons();
 renderBotButtons(achievements);
 // Рекорды, которые раньше не ушли в общую таблицу (не было сети), — отправляем сейчас.
 saver.flushPending();
@@ -666,6 +671,8 @@ exposeForTests({
   get theme() { return document.documentElement.dataset.theme; },
   get fieldInsets() { return renderer.insets; },
   get tutorialStep() { return mode.kind === 'tutorial' ? mode.index : null; },
+  // Как будто в фоне скачалась новая версия (сам service worker в тестах не подменить).
+  simulateUpdateReady: () => whatsNew.onUpdateReady(),
 });
 markActive($('#mode-select'), 'mode', settings.mode);
 // Общая таблица и отзывы появляются, только когда подключена база.
@@ -688,5 +695,7 @@ if (invited) {
   // Совсем новый игрок — сразу обучение (его можно пропустить).
   startTutorial();
 }
+// Игра обновилась с прошлого раза — один раз показать, что нового (только поверх меню).
+whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu' });
 
 requestAnimationFrame(frame);

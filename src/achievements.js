@@ -1,33 +1,34 @@
 /**
  * Достижения (как в Steam). Хранятся в браузере игрока.
  * Логика без DOM: какие есть, какие открыты, что открывается за победу над ботом.
+ * icon — имя знака из src/ui/icons.js (свой набор, не эмодзи).
  */
 
 const STORAGE_KEY = 'snake3d.achievements.v1';
 
 export const ACHIEVEMENTS = Object.freeze([
   {
-    id: 'beat-easy', bot: 'easy', icon: '🐍', rarity: 'common',
+    id: 'beat-easy', bot: 'easy', icon: 'snake', rarity: 'common',
     title: 'Ужик, прости', description: 'Победить Ужика — лёгкого бота',
   },
   {
-    id: 'beat-medium', bot: 'medium', icon: '🧪', rarity: 'common',
+    id: 'beat-medium', bot: 'medium', icon: 'flask', rarity: 'common',
     title: 'Яд не подействовал', description: 'Победить Гадюку — среднего бота',
   },
   {
-    id: 'beat-hard', bot: 'hard', icon: '🌀', rarity: 'rare',
+    id: 'beat-hard', bot: 'hard', icon: 'spiral', rarity: 'rare',
     title: 'Выскользнул из объятий', description: 'Победить Анаконду — сложного бота',
   },
   {
-    id: 'beat-claude', bot: 'claude', icon: '👑', rarity: 'legendary',
+    id: 'beat-claude', bot: 'claude', icon: 'crown', rarity: 'legendary',
     title: 'Бог змейки', description: 'Победить Claude — самого сильного бота',
   },
   {
-    id: 'ouroboros', icon: '♾️', rarity: 'legendary',
+    id: 'ouroboros', icon: 'infinity', rarity: 'legendary',
     title: 'Уроборос', description: 'Победить всех четырёх ботов: круг замкнулся',
   },
   {
-    id: 'first-steps', icon: '🎓', rarity: 'common',
+    id: 'first-steps', icon: 'cap', rarity: 'common',
     title: 'Первые шаги', description: 'Пройти обучение',
   },
 ]);

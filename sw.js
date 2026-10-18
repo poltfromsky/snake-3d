@@ -69,7 +69,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || request.headers.has('range') || request.destination === 'audio') return;
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
-    event.respondWith(DEV ? networkFirst(request) : fromVersion(request));
+    // Список изменений — всегда свежий с сайта: по нему игрок узнаёт, что в новой версии.
+    const fresh = DEV || url.pathname.endsWith('/changelog.json');
+    event.respondWith(fresh ? networkFirst(request) : fromVersion(request));
   } else if (VENDOR_HOSTS.has(url.hostname)) {
     event.respondWith(vendor(request));
   }
