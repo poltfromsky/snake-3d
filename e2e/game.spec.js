@@ -271,17 +271,27 @@ test.describe('защита общей таблицы', () => {
 
   test('чужой ник занять нельзя: другое устройство получает отказ', async ({ browser }, testInfo) => {
     const nick = `Мой${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
-    const owner = await (await browser.newContext({ serviceWorkers: 'block' })).newPage();
-    await openGame(owner, { playerName: nick, autoSubmit: 'on' });
-    await uniqueSenderForRecords(owner);
-    await playSolo(owner, 20);
-    await expect(owner.locator('#record-auto-status')).toHaveText(/^В общей таблице:/);
+    // Два «устройства» — два отдельных браузера. Закрываем их в конце: иначе они продолжают
+    // рисовать 3D в фоне и тормозят следующие тесты.
+    const ownerContext = await browser.newContext({ serviceWorkers: 'block' });
+    const strangerContext = await browser.newContext({ serviceWorkers: 'block' });
+    try {
+      const owner = await ownerContext.newPage();
+      await openGame(owner, { playerName: nick, autoSubmit: 'on' });
+      await uniqueSenderForRecords(owner);
+      await playSolo(owner, 20);
+      await expect(owner.locator('#record-auto-status')).toHaveText(/^В общей таблице:/);
+      await ownerContext.close();
 
-    const stranger = await (await browser.newContext({ serviceWorkers: 'block' })).newPage();
-    const errors = await openGame(stranger, { playerName: nick, autoSubmit: 'on' });
-    await uniqueSenderForRecords(stranger);
-    await playSolo(stranger, 30);
-    await expect(stranger.locator('#record-auto-status')).toHaveText(`Ник «${nick}» уже занят другим игроком. Выберите другой в настройках.`);
-    expect(errors).toEqual([]);
+      const stranger = await strangerContext.newPage();
+      const errors = await openGame(stranger, { playerName: nick, autoSubmit: 'on' });
+      await uniqueSenderForRecords(stranger);
+      await playSolo(stranger, 30);
+      await expect(stranger.locator('#record-auto-status')).toHaveText(`Ник «${nick}» уже занят другим игроком. Выберите другой в настройках.`);
+      expect(errors).toEqual([]);
+    } finally {
+      await ownerContext.close();
+      await strangerContext.close();
+    }
   });
 });
