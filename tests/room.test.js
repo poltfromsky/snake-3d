@@ -106,3 +106,39 @@ test('режим и скорость задаёт создатель, неизв
   assert.equal(bad.mode, 'classic');
   assert.equal(bad.speedFactor, 1);
 });
+
+test('ники: игрок называется — оба получают список, второй видит ник создателя сразу при входе', () => {
+  const room = new RoomSession();
+  room.join('a');
+  assert.deepEqual(room.handle('a', { t: 'name', name: 'Питон' }), [{ to: 'all', msg: { t: 'names', names: ['Питон', null] } }]);
+  const { messages } = room.join('b');
+  const joined = messages.find((m) => m.msg.t === 'joined');
+  assert.deepEqual(joined.msg.names, ['Питон', null]);
+  assert.deepEqual(room.handle('b', { t: 'name', name: 'Удав' })[0].msg.names, ['Питон', 'Удав']);
+});
+
+test('ники проверяются как имена в рекордах: управляющие символы, пробелы, длина', () => {
+  const room = fullRoom();
+  const sent = room.handle('a', { t: 'name', name: '  Очень\u0000длинный   ник для таблицы  ' });
+  assert.equal(sent[0].msg.names[0], 'Очень длинный ни');
+  assert.equal(sent[0].msg.names[0].length, 16);
+  assert.deepEqual(room.handle('a', { t: 'name', name: 42 }), [], 'не строка — игнорируем');
+  assert.deepEqual(room.handle('a', { t: 'name', name: { evil: true } }), []);
+  assert.deepEqual(room.handle('a', { t: 'name', name: '   ' })[0].msg.names[0], null, 'пустой ник — снова без ника');
+});
+
+test('ники: повтор того же ника не рассылается, уход игрока стирает его ник', () => {
+  const room = fullRoom();
+  room.handle('b', { t: 'name', name: 'Удав' });
+  assert.deepEqual(room.handle('b', { t: 'name', name: 'Удав' }), []);
+  room.leave('b');
+  assert.deepEqual(room.names, [null, null]);
+  const { messages } = room.join('c');
+  assert.deepEqual(messages.find((m) => m.msg.t === 'joined').msg.names, [null, null]);
+});
+
+test('чужое подключение не может назваться за игрока', () => {
+  const room = fullRoom();
+  assert.deepEqual(room.handle('stranger', { t: 'name', name: 'Хакер' }), []);
+  assert.deepEqual(room.names, [null, null]);
+});

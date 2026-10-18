@@ -18,6 +18,7 @@
 import { BOT_LEVELS } from '../core/bot.js';
 import { Duel } from '../core/duel.js';
 import { DIRECTIONS, Game, MODES } from '../core/game.js';
+import { cleanText, LIMITS } from '../core/validate.js';
 
 /** Скорость музыки: 0 — начало партии, 1 — максимальная скорость змеек. */
 function intensityOf(game) {
@@ -145,9 +146,13 @@ export class BotDuelMode extends LocalDuelBase {
  */
 export class OnlineMode {
   /**
-   * @param {{connection: {send(msg): void, close(): void}, slot: number, now?: () => number}} config
+   * @param {object} config
+   * @param {{send(msg): void, close(): void}} config.connection
+   * @param {number} config.slot своё место в комнате
+   * @param {(string|null)[]} [config.names] ники, известные на момент входа
+   * @param {() => number} [config.now]
    */
-  constructor({ connection, slot, now = () => performance.now() }) {
+  constructor({ connection, slot, names = [], now = () => performance.now() }) {
     this.kind = 'online';
     this.isDuel = true;
     this.canPause = false;
@@ -157,6 +162,7 @@ export class OnlineMode {
     this.now = now;
     this.game = null;
     this.remote = null; // { snap, receivedAt }
+    this.names = OnlineMode.cleanNames(names);
     // Сцену пересобираем под поле сервера: по первому снимку и в начале каждого раунда.
     this.needsSetup = true;
   }
@@ -178,6 +184,9 @@ export class OnlineMode {
         return { type: 'countdown', n: msg.n };
       case 'go':
         return { type: 'go' };
+      case 'names':
+        this.names = OnlineMode.cleanNames(msg.names);
+        return { type: 'names' };
       case 'rematch':
         return { type: 'rematch', mine: Boolean(msg.votes?.[this.myIndex]) };
       case 'opponent':
@@ -221,10 +230,21 @@ export class OnlineMode {
 
   rematch() { this.connection.send({ t: 'rematch' }); }
 
+  /** Сообщить серверу свой ник — его увидит соперник. Без ника соперник видит «Друг». */
+  introduce(name) {
+    if (name) this.connection.send({ t: 'name', name });
+  }
+
+  /** Ники приходят из сети: сервер их проверяет, но клиент на всякий случай чистит ещё раз. */
+  static cleanNames(names) {
+    const list = Array.isArray(names) ? names : [];
+    return [0, 1].map((i) => (typeof list[i] === 'string' ? cleanText(list[i], LIMITS.name) || null : null));
+  }
+
   /** Итог партии сервер присылает в самом событии gameOver. */
   duelResult(event) { return { scores: event.scores, deaths: event.deaths }; }
 
-  playerName(i) { return i === this.myIndex ? 'Вы' : 'Друг'; }
+  playerName(i) { return i === this.myIndex ? 'Вы' : (this.names[i] ?? 'Друг'); }
 
   hud() {
     return {

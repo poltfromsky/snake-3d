@@ -247,7 +247,10 @@ function frame(now) {
 const lobby = createOnlineLobby({
   apiBase: API_BASE,
   settings,
-  onJoined: (connection, joined) => setMode(new OnlineMode({ connection, slot: joined.slot })),
+  onJoined: (connection, joined) => {
+    setMode(new OnlineMode({ connection, slot: joined.slot, names: joined.names }));
+    mode.introduce(settings.playerName);
+  },
   onMessage: handleNetMessage,
   onClose: (connection) => { if (mode.connection === connection) connectionLost(); },
 });
@@ -269,6 +272,9 @@ function connectionLost() {
   lobby.status(`Связь с сервером прервалась. ${VPN_HINT}`, true);
   audio.pauseMusic();
 }
+
+/** Как зовут соперника в онлайне: его ник или «Друг». */
+const opponentName = () => mode.playerName(1 - mode.myIndex);
 
 function countdownTick(n) {
   toast(n > 0 ? String(n) : 'Вперёд!');
@@ -296,12 +302,12 @@ function handleNetMessage(msg, connection) {
       beginPlaying();
       break;
     case 'rematch':
-      $('#duel-status').textContent = action.mine ? 'Ждём ответа друга…' : 'Друг хочет реванш!';
+      $('#duel-status').textContent = action.mine ? 'Ждём ответа соперника…' : `${opponentName()} хочет реванш!`;
       break;
     case 'opponent':
       // Второй игрок подключился — партию запустит сам сервер.
       if (!action.connected && !app.is(LOBBY)) {
-        toast('Друг вышел из игры');
+        toast(`${opponentName()} вышел из игры`);
         toMenu();
       }
       break;
@@ -318,7 +324,7 @@ function handleNetMessage(msg, connection) {
 const records = createRecordsScreen({
   settings, leaderboard, show, setBack: (name) => { backTo = name; },
 });
-const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION });
+const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, settings });
 const settingsScreen = createSettingsScreen({
   settings,
   audio,
@@ -423,7 +429,7 @@ const ACTIONS = {
     openFromMenu('records');
   },
   feedback: () => {
-    feedback.open(settings.playerName);
+    feedback.open();
     openFromMenu('feedback');
     feedback.focus();
   },

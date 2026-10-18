@@ -25,15 +25,44 @@ function formatTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+let duelHud = null;
+
+/**
+ * Счёт дуэли: «● Вы 3 | 5 Удав ●». Узлы создаются один раз, дальше меняется только текст —
+ * ник соперника приходит из сети, поэтому в HTML его не вставляем.
+ */
+function renderDuelHud(mode, scores, theme) {
+  if (!duelHud) {
+    const side = (order) => {
+      const span = document.createElement('span');
+      const name = document.createElement('span');
+      const score = document.createElement('b');
+      span.append(...order(name, score));
+      return { span, name, score };
+    };
+    const left = side((name, score) => ['● ', name, ' ', score]);
+    const right = side((name, score) => [score, ' ', name, ' ●']);
+    $('#hud-duel').replaceChildren(left.span, right.span);
+    duelHud = [left, right];
+  }
+  const color = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
+  [theme.head, theme.rivalHead].forEach((hex, i) => {
+    duelHud[i].span.style.color = color(hex);
+    setText(duelHud[i].name, mode.playerName(i));
+    setText(duelHud[i].score, String(scores[i]));
+  });
+}
+
 /** Обновляет HUD по данным режима (mode.hud()). */
 export function renderHud(mode, themeId) {
   const data = mode.hud();
   if (data.timeLeft != null) $('#hud-timer').textContent = formatTime(data.timeLeft);
   if (data.duel) {
-    const theme = THEMES[themeId] ?? THEMES.neon;
-    const color = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
-    setHtml($('#hud-duel'), `<span style="color:${color(theme.head)}">● ${mode.playerName(0)} <b>${data.scores[0]}</b></span>`
-      + `<span style="color:${color(theme.rivalHead)}"><b>${data.scores[1]}</b> ${mode.playerName(1)} ●</span>`);
+    renderDuelHud(mode, data.scores, THEMES[themeId] ?? THEMES.neon);
     return;
   }
   $('#hud-score').textContent = data.score;

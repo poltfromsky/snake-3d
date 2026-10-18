@@ -1,12 +1,14 @@
 /** Экран «Отзыв об игре»: оценка, текст, имя — уходит на сервер (читает только автор). */
+import { setPlayerName } from '../storage.js';
 import { $, markActive, serverMessage } from './dom.js';
 
 /**
  * @param {object} deps
  * @param {import('../net/leaderboard.js').Leaderboard} deps.leaderboard
  * @param {string} deps.version версия игры для отзыва
+ * @param {object} deps.settings здесь хранится ник игрока
  */
-export function createFeedbackScreen({ leaderboard, version }) {
+export function createFeedbackScreen({ leaderboard, version, settings }) {
   let rating = null;
 
   $('#feedback-rating').addEventListener('click', (e) => {
@@ -27,6 +29,8 @@ export function createFeedbackScreen({ leaderboard, version }) {
     }
     button.disabled = true;
     status.textContent = 'Отправляем…';
+    // Ник из отзыва становится общим ником игры (пустое поле ник не стирает).
+    if ($('#feedback-name').value.trim()) $('#feedback-name').value = setPlayerName(settings, $('#feedback-name').value);
     try {
       await leaderboard.submitFeedback({
         name: $('#feedback-name').value,
@@ -43,10 +47,10 @@ export function createFeedbackScreen({ leaderboard, version }) {
     }
   });
 
-  /** Подготовить экран к показу. */
-  function open(playerName) {
+  /** Подготовить экран к показу: подставить текущий ник. */
+  function open() {
     $('#feedback-status').textContent = '';
-    $('#feedback-name').value = $('#feedback-name').value || (playerName ?? '');
+    $('#feedback-name').value = settings.playerName ?? '';
   }
 
   return { open, focus: () => $('#feedback-message').focus() };

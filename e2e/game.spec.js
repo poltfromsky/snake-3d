@@ -17,8 +17,9 @@ async function openGame(page, settings = {}) {
     // Сбой загрузки внешнего ресурса (шрифт, CDN) — не ошибка нашего кода.
     if (m.type() === 'error' && !m.text().includes('Failed to load resource')) errors.push(`console: ${m.text()}`);
   });
+  // Только в чистое хранилище: после перезагрузки страницы остаётся то, что сохранила игра.
   await page.addInitScript((s) => {
-    localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
+    if (!localStorage.getItem('snake3d.settings.v1')) localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
   }, { ...BASE_SETTINGS, ...settings });
   await page.goto('/?e2e');
   await expect(page.locator('#screen-menu')).toBeVisible();
@@ -100,27 +101,28 @@ test('онлайн: комната по ссылке, оба видят итог
   const guest = await browser.newContext();
   const a = await host.newPage();
   const b = await guest.newPage();
-  const errorsA = await openGame(a);
+  const errorsA = await openGame(a, { playerName: 'Питон' });
   await a.locator('[data-action="online"]').click();
+  await expect(a.locator('#online-name')).toHaveValue('Питон');
   await a.locator('[data-action="create-room"]').click();
   await expect(a.locator('#online-status')).toHaveText(/Ждём друга/);
   const link = await a.locator('#room-link').inputValue();
   expect(link).toMatch(/\?room=[A-Z0-9]{5}$/);
 
-  const errorsB = await openGameFromLink(b, `${link}&e2e`);
+  const errorsB = await openGameFromLink(b, `${link}&e2e`, { playerName: 'Удав' });
   // Режим «Стены», без поворотов: змейки одновременно врезаются в противоположные стены.
   for (const page of [a, b]) {
     await expect(page.locator('#screen-duel')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('#duel-title')).toHaveText('Ничья');
   }
-  // Каждый видит себя как «Вы», соперника — как «Друг» (счёт зависит от съеденных яблок).
+  // Каждый видит себя как «Вы», соперника — по нику (счёт зависит от съеденных яблок).
   await expect(a.locator('#duel-s0')).toHaveText(/^Вы \d+$/);
-  await expect(a.locator('#duel-s1')).toHaveText(/^\d+ Друг$/);
-  await expect(b.locator('#duel-s0')).toHaveText(/^Друг \d+$/);
+  await expect(a.locator('#duel-s1')).toHaveText(/^\d+ Удав$/);
+  await expect(b.locator('#duel-s0')).toHaveText(/^Питон \d+$/);
   await expect(b.locator('#duel-s1')).toHaveText(/^\d+ Вы$/);
 
   await a.locator('#screen-duel [data-action="rematch"]').click();
-  await expect(b.locator('#duel-status')).toHaveText('Друг хочет реванш!');
+  await expect(b.locator('#duel-status')).toHaveText('Питон хочет реванш!');
   await b.locator('#screen-duel [data-action="rematch"]').click();
   for (const page of [a, b]) await expect(page.locator('#screen-duel')).toBeHidden();
   expect([...errorsA, ...errorsB]).toEqual([]);
@@ -129,13 +131,13 @@ test('онлайн: комната по ссылке, оба видят итог
 });
 
 /** Гость открывает ссылку друга — настройки у него свои, режим задаёт создатель. */
-async function openGameFromLink(page, url) {
+async function openGameFromLink(page, url, settings = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error' && !m.text().includes('Failed to load resource')) errors.push(`console: ${m.text()}`);
   });
-  await page.addInitScript((s) => localStorage.setItem('snake3d.settings.v1', JSON.stringify(s)), BASE_SETTINGS);
+  await page.addInitScript((s) => localStorage.setItem('snake3d.settings.v1', JSON.stringify(s)), { ...BASE_SETTINGS, ...settings });
   await page.goto(url);
   return errors;
 }
@@ -156,5 +158,25 @@ test('отзыв уходит на сервер и игрок видит отв�
   expect(await gameState(page)).toBe('menu');
   await page.locator('#feedback-form button[type="submit"]').click();
   await expect(page.locator('#feedback-status')).toHaveText('Спасибо! Отзыв отправлен.');
+  expect(errors).toEqual([]);
+});
+
+test('ник вводится один раз: из настроек он попадает в рекорд и отзыв и переживает перезагрузку', async ({ page }) => {
+  const errors = await openGame(page);
+  await page.locator('#screen-menu [data-action="settings"]').click();
+  await page.locator('#set-name').pressSequentially('Питон');
+  await page.locator('#screen-settings [data-action="back"]').click();
+  await page.reload();
+  await expect(page.locator('#screen-menu')).toBeVisible();
+
+  await page.locator('#screen-menu [data-action="play"]').click();
+  // Очки, чтобы результат можно было сохранить; дальше змейка сама врежется в стену.
+  await page.evaluate(() => { globalThis.__snakeE2E.game.score = 5; });
+  await expect(page.locator('#screen-over')).toBeVisible();
+  await expect(page.locator('#record-name')).toHaveValue('Питон');
+
+  await page.locator('#screen-over [data-action="menu"]').click();
+  await page.locator('[data-action="feedback"]').click();
+  await expect(page.locator('#feedback-name')).toHaveValue('Питон');
   expect(errors).toEqual([]);
 });

@@ -5,6 +5,8 @@
  * тогда игра просто работает без сохранения.
  */
 
+import { cleanText, LIMITS } from './core/validate.js';
+
 const SETTINGS_KEY = 'snake3d.settings.v1';
 const RECORDS_KEY = 'snake3d.records.v1';
 const MAX_RECORDS = 10;
@@ -16,6 +18,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'neon', // neon | forest | sunset
   camera: 'angled', // angled | top
   mode: 'classic',
+  playerName: '', // один ник на всю игру: рекорды, отзыв, онлайн
 });
 
 export const SPEED_FACTORS = Object.freeze({ slow: 0.75, normal: 1, fast: 1.35 });
@@ -43,6 +46,17 @@ export function loadSettings() {
 
 export function saveSettings(settings) {
   write(SETTINGS_KEY, settings);
+}
+
+/**
+ * Запоминает ник игрока (где бы его ни ввели) и возвращает очищенный вариант.
+ * Правила те же, что у имени в общей таблице рекордов.
+ */
+export function setPlayerName(settings, raw) {
+  const name = cleanText(raw, LIMITS.name);
+  settings.playerName = name;
+  saveSettings(settings);
+  return name;
 }
 
 /** Рекорды по режимам: { classic: [{name, score, length, date}], ... } */

@@ -135,6 +135,9 @@
       <h2>Игра по сети</h2>
       <p class="subtitle">Две змейки на одном поле — кто дольше продержится</p>
       <div id="online-start" class="stack">
+        <label class="field">Ваш ник — его увидит друг
+          <input id="online-name" maxlength="16" autocomplete="nickname" placeholder="Без ника вы будете «Друг»">
+        </label>
         <button class="btn primary" data-action="create-room">Создать комнату</button>
         <form id="join-form" class="row">
           <input id="join-code" maxlength="8" autocomplete="off" placeholder="Код комнаты" aria-label="Код комнаты">
@@ -212,7 +215,7 @@
           </div>
         </div>
         <textarea id="feedback-message" rows="5" maxlength="1000" placeholder="Ваш комментарий" aria-label="Комментарий" required></textarea>
-        <input id="feedback-name" maxlength="32" autocomplete="nickname" placeholder="Имя (необязательно)" aria-label="Имя">
+        <input id="feedback-name" maxlength="16" autocomplete="nickname" placeholder="Ник (необязательно)" aria-label="Ник">
         <button class="btn primary" type="submit">Отправить</button>
         <p id="feedback-status" class="status" aria-live="polite"></p>
       </form>
@@ -224,6 +227,9 @@
   <section id="screen-settings" class="screen hidden">
     <div class="panel">
       <h2>Настройки</h2>
+      <label class="field">Ваш ник — для рекордов, отзывов и онлайна
+        <input id="set-name" maxlength="16" autocomplete="nickname" placeholder="Игрок">
+      </label>
       <label class="field">Музыка <input type="range" id="set-music" min="0" max="1" step="0.05"></label>
       <label class="field">Эффекты <input type="range" id="set-sfx" min="0" max="1" step="0.05"></label>
       <div class="field">Скорость

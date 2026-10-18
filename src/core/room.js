@@ -7,7 +7,8 @@
  * игра, ни у кого нет преимущества и не важно, свернул ли кто-то вкладку.
  *
  * Сервер → игрок:
- *   joined {slot, mode}      — место в комнате (0 — создатель, 1 — друг)
+ *   joined {slot, mode, names} — место в комнате (0 — создатель, 1 — друг) и уже известные ники
+ *   names {names}            — ники игроков изменились ([ник0, ник1], null — без ника)
  *   opponent {connected}     — соперник подключился / отключился
  *   round                    — новая партия: пересобрать сцену
  *   countdown {n}, go        — отсчёт 3-2-1 и старт
@@ -15,10 +16,12 @@
  *   rematch {votes}          — кто уже нажал «Реванш»
  *   error {text}             — комната не найдена, занята и т. п.
  * Игрок → сервер:
+ *   name {name}              — свой ник (проверяется как имя в рекордах)
  *   turn {dir}, rematch, ping
  */
 import { Duel } from './duel.js';
 import { DIRECTIONS, MODES } from './game.js';
+import { cleanText, LIMITS } from './validate.js';
 
 export const SPEEDS = Object.freeze({ slow: 0.75, normal: 1, fast: 1.35 });
 export const COUNTDOWN_MS = 3000;
@@ -36,6 +39,7 @@ export class RoomSession {
     this.speedFactor = SPEEDS[speed] ?? 1;
     this.rng = rng;
     this.slots = [null, null]; // id подключения или null
+    this.names = [null, null]; // ники игроков, null — не назвался
     this.phase = 'waiting'; // waiting | countdown | playing | over
     this.duel = null;
     this.countdownLeft = 0;
@@ -67,7 +71,7 @@ export class RoomSession {
     // 'self' — ответ именно этому подключению: места у него ещё нет.
     if (slot === -1) return { slot: -1, messages: [out('self', { t: 'error', text: 'В комнате уже двое игроков.' })] };
     this.slots[slot] = id;
-    const messages = [out(slot, { t: 'joined', slot, mode: this.mode })];
+    const messages = [out(slot, { t: 'joined', slot, mode: this.mode, names: [...this.names] })];
     const other = this.slots[1 - slot];
     if (other) {
       messages.push(out(1 - slot, { t: 'opponent', connected: true }));
@@ -81,6 +85,7 @@ export class RoomSession {
     const slot = this.slotOf(id);
     if (slot === -1) return [];
     this.slots[slot] = null;
+    this.names[slot] = null;
     // Партия без соперника не имеет смысла: возвращаемся в ожидание.
     this.phase = 'waiting';
     this.duel = null;
@@ -112,6 +117,13 @@ export class RoomSession {
       case 'turn':
         if (this.phase === 'playing' && TURN_NAMES.has(msg.dir)) this.duel.turn(slot, DIRECTIONS[msg.dir]);
         return [];
+      case 'name': {
+        if (typeof msg.name !== 'string') return [];
+        const name = cleanText(msg.name, LIMITS.name) || null;
+        if (name === this.names[slot]) return [];
+        this.names[slot] = name;
+        return [out('all', { t: 'names', names: [...this.names] })];
+      }
       case 'rematch':
         if (this.phase !== 'over') return [];
         this.votes[slot] = true;

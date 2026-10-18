@@ -37,6 +37,12 @@ const joinedB = await b.waitFor((m) => m.t === 'joined');
 assert.deepEqual([joinedA.slot, joinedB.slot, joinedA.mode], [0, 1, 'walls']);
 console.log('✔ места 0 и 1, режим задал создатель');
 
+a.send({ t: 'name', name: 'Питон' });
+b.send({ t: 'name', name: '  Удав\u0000  ' });
+const named = await a.waitFor((m) => m.t === 'names' && m.names[0] === 'Питон' && m.names[1] === 'Удав');
+assert.deepEqual(named.names, ['Питон', 'Удав']);
+console.log('✔ ники игроков дошли до обоих и очищены сервером');
+
 const c = client(code, 'C');
 const err = await c.waitFor((m) => m.t === 'error');
 assert.equal(await c.closed, 4409);

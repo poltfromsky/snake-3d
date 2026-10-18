@@ -4,6 +4,7 @@
  */
 import { createRoom, normalizeRoomCode, RoomConnection, roomLink } from '../net/online.js';
 import { $ } from './dom.js';
+import { bindNameInput } from './nickname.js';
 
 /**
  * Колбэки получают соединение, от которого пришло событие: приложение
@@ -16,6 +17,8 @@ import { $ } from './dom.js';
  * @param {(connection: RoomConnection) => void} deps.onClose связь оборвалась (своё закрытие сюда не попадает)
  */
 export function createOnlineLobby({ apiBase, settings, onJoined, onMessage, onClose }) {
+  const nameField = bindNameInput($('#online-name'), settings);
+
   function status(text, isError = false) {
     const el = $('#online-status');
     el.textContent = text;
@@ -30,6 +33,7 @@ export function createOnlineLobby({ apiBase, settings, onJoined, onMessage, onCl
 
   /** Сбросить экран к выбору «создать / войти». */
   function reset() {
+    nameField.refresh();
     $('#online-start').classList.remove('hidden');
     $('#online-room').classList.add('hidden');
     status('');

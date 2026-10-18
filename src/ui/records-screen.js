@@ -1,7 +1,9 @@
 /**
  * Экран «Рекорды» (свои и общие) и форма сохранения результата после одиночной игры.
  */
-import { addRecord, isRecord, loadRecords, saveSettings } from '../storage.js';
+import {
+  addRecord, isRecord, loadRecords, setPlayerName,
+} from '../storage.js';
 import { $, markActive, serverMessage } from './dom.js';
 
 /**
@@ -102,9 +104,8 @@ export function createRecordsScreen({ settings, leaderboard, show, setBack }) {
     const button = $('#record-form button[type=submit]');
     if (button.disabled || !pending) return;
     button.disabled = true;
-    const name = $('#record-name').value.trim() || 'Игрок';
-    settings.playerName = name;
-    saveSettings(settings);
+    // Введённый ник запоминается для всей игры — в следующий раз писать заново не придётся.
+    const name = setPlayerName(settings, $('#record-name').value) || 'Игрок';
     const entry = { name, score: pending.score, length: pending.length };
     if (isRecord(settings.mode, pending.score)) addRecord(settings.mode, { ...entry, date: Date.now() });
 

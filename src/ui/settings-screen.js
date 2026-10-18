@@ -1,6 +1,7 @@
-/** Экран «Настройки»: громкость, скорость, тема, камера. Всё сохраняется сразу. */
+/** Экран «Настройки»: ник, громкость, скорость, тема, камера. Всё сохраняется сразу. */
 import { saveSettings, SPEED_FACTORS } from '../storage.js';
 import { $, markActive } from './dom.js';
+import { bindNameInput } from './nickname.js';
 
 /**
  * @param {object} deps
@@ -9,7 +10,10 @@ import { $, markActive } from './dom.js';
  * @param {{onSpeed(f: number): void, onTheme(): void, onCamera(v: string): void}} deps.hooks
  */
 export function createSettingsScreen({ settings, audio, hooks }) {
+  const nameField = bindNameInput($('#set-name'), settings);
+
   function render() {
+    nameField.refresh();
     $('#set-music').value = settings.musicVolume;
     $('#set-sfx').value = settings.sfxVolume;
     markActive($('#set-speed'), 'value', settings.speed);

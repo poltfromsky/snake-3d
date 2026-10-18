@@ -223,3 +223,30 @@ test('онлайн: подписи и итог партии со стороны 
   assert.deepEqual(online.duelResult(event), { scores: [2, 5], deaths: ['wall', null] });
   assert.equal(online.intensity(), null, 'темп музыки в онлайне не меняется');
 });
+
+test('онлайн: ник соперника из входа и из сообщений, свой — всегда «Вы»', () => {
+  const online = new OnlineMode({ connection: fakeConnection(), slot: 1, names: ['Питон', 'Удав'] });
+  assert.deepEqual([online.playerName(0), online.playerName(1)], ['Питон', 'Вы']);
+  assert.deepEqual(online.receive({ t: 'names', names: [null, 'Удав'] }), { type: 'names' });
+  assert.equal(online.playerName(0), 'Друг', 'без ника — «Друг»');
+  online.receive({ t: 'names', names: ['Кобра', 'Удав'] });
+  assert.equal(online.playerName(0), 'Кобра');
+});
+
+test('онлайн: ники из сети чистятся и на клиенте', () => {
+  const online = new OnlineMode({ connection: fakeConnection(), slot: 0 });
+  online.receive({ t: 'names', names: [null, `x\u0007${'y'.repeat(40)}`] });
+  assert.equal(online.playerName(1), `x ${'y'.repeat(14)}`);
+  online.receive({ t: 'names', names: [null, { html: '<b>' }] });
+  assert.equal(online.playerName(1), 'Друг');
+  online.receive({ t: 'names', names: 'мусор' });
+  assert.deepEqual(online.names, [null, null]);
+});
+
+test('онлайн: свой ник уходит на сервер, пустой — не отправляется', () => {
+  const connection = fakeConnection();
+  const online = new OnlineMode({ connection, slot: 0 });
+  online.introduce('');
+  online.introduce('Питон');
+  assert.deepEqual(connection.sent, [{ t: 'name', name: 'Питон' }]);
+});
