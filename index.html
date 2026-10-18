@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Изгиб Питона 3D</title>
   <meta name="description" content="3D-змейка на Three.js: режимы, бонусы, рекорды.">
+  <!-- Приложение на экране «Домой» (PWA): Android, iPhone, компьютер. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#070b18">
+  <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Изгиб Питона">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -32,11 +41,23 @@
     <button id="btn-pause" class="icon-btn" aria-label="Пауза">❚❚</button>
   </header>
   <div id="toast" class="toast" aria-live="polite"></div>
+  <!-- Кнопки-стрелки для телефона (включаются в настройках вместо свайпов). -->
+  <div id="dpad" class="dpad hidden" aria-label="Кнопки управления">
+    <button data-dir="UP" aria-label="Вверх">▲</button>
+    <button data-dir="LEFT" aria-label="Влево">◀</button>
+    <button data-dir="RIGHT" aria-label="Вправо">▶</button>
+    <button data-dir="DOWN" aria-label="Вниз">▼</button>
+  </div>
   <div id="achievement-toasts" class="achievement-toasts" aria-live="polite"></div>
 
   <!-- Главное меню -->
   <section id="screen-menu" class="screen">
     <div class="panel">
+      <!-- Новая версия скачана в фоне: включается по кнопке, только из меню. -->
+      <div id="update-banner" class="update-banner hidden" role="status">
+        <span>Вышла новая версия игры</span>
+        <button class="btn primary" data-action="update">Обновить</button>
+      </div>
       <h1>Изгиб<br><span>Питона</span> 3D</h1>
       <p class="subtitle">Классическая змейка в трёх измерениях</p>
       <div class="segmented" id="mode-select" role="radiogroup" aria-label="Режим">
@@ -49,7 +70,7 @@
         <span class="duo-title">Вдвоём</span>
         <div class="row">
           <button class="btn online-only hidden" data-action="online">Онлайн по ссылке</button>
-          <button class="btn" data-action="local">Одна клавиатура</button>
+          <button class="btn keyboard-only" data-action="local">Одна клавиатура</button>
         </div>
       </div>
       <div class="duo bots">
@@ -67,18 +88,21 @@
         <button class="btn" data-action="settings">Настройки</button>
       </div>
       <button class="btn link-btn online-only hidden" data-action="feedback">💬 Оставить отзыв об игре</button>
+      <button class="btn link-btn hidden" id="btn-install" data-action="install">📲 Установить как приложение</button>
       <details class="howto" open>
         <summary>Как играть</summary>
         <div class="howto-grid">
           <section aria-labelledby="howto-controls">
             <h3 id="howto-controls">Управление</h3>
             <ul class="keys">
-              <li><b>Поворот</b><span class="keycaps"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd><i>или</i><kbd>WASD</kbd></span></li>
-              <li><b>Пауза</b><span class="keycaps"><kbd>Пробел</kbd><i>или</i><kbd>Esc</kbd></span></li>
-              <li><b>Старт из меню</b><span class="keycaps"><kbd>Enter</kbd></span></li>
-              <li><b>На телефоне</b><span class="keycaps">свайп в нужную сторону</span></li>
+              <li class="keyboard-only"><b>Поворот</b><span class="keycaps"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd><i>или</i><kbd>WASD</kbd></span></li>
+              <li class="keyboard-only"><b>Пауза</b><span class="keycaps"><kbd>Пробел</kbd><i>или</i><kbd>Esc</kbd></span></li>
+              <li class="keyboard-only"><b>Старт из меню</b><span class="keycaps"><kbd>Enter</kbd></span></li>
+              <li class="touch-only"><b>Поворот</b><span class="keycaps">проведите пальцем в нужную сторону — в любом месте экрана</span></li>
+              <li class="touch-only"><b>Пауза</b><span class="keycaps">кнопка ❚❚ вверху справа</span></li>
+              <li class="touch-only"><b>Кнопки</b><span class="keycaps">стрелки на экране вместо свайпов — в настройках</span></li>
             </ul>
-            <p class="howto-note"><b>Одна клавиатура:</b> игрок 1 — <kbd>WASD</kbd>, игрок 2 — стрелки.</p>
+            <p class="howto-note keyboard-only"><b>Одна клавиатура:</b> игрок 1 — <kbd>WASD</kbd>, игрок 2 — стрелки.</p>
           </section>
           <section aria-labelledby="howto-items">
             <h3 id="howto-items">На поле</h3>
@@ -156,6 +180,20 @@
       <p class="vpn-note">Для онлайн-игры включите VPN.</p>
       <p class="hint">Режим (классика, стены, на время) и скорость выбирает создатель комнаты.<br>Ваша змейка — <span class="you">●</span>, у друга — <span class="rival">●</span>.</p>
       <button class="btn" data-action="leave">Назад</button>
+    </div>
+  </section>
+
+  <!-- Как установить на iPhone: Safari не показывает кнопку установки сам -->
+  <section id="screen-install" class="screen hidden">
+    <div class="panel small">
+      <h2>Игра на экране «Домой»</h2>
+      <p class="subtitle">Откроется на весь экран, без панелей браузера, и будет работать даже без интернета (одиночная игра).</p>
+      <ol class="install-steps">
+        <li>Откройте игру в <b>Safari</b> (из Telegram: «⋯» → «Открыть в Safari»).</li>
+        <li>Нажмите <b>«Поделиться»</b> <span aria-hidden="true">⬆︎</span> внизу экрана.</li>
+        <li>Выберите <b>«На экран „Домой“»</b> и нажмите «Добавить».</li>
+      </ol>
+      <button class="btn" data-action="back">Понятно</button>
     </div>
   </section>
 
@@ -250,6 +288,12 @@
         <div class="segmented compact" id="set-camera">
           <button data-value="angled">Под углом</button>
           <button data-value="top">Сверху</button>
+        </div>
+      </div>
+      <div class="field touch-only">Управление
+        <div class="segmented compact" id="set-controls">
+          <button data-value="swipe">Свайпы</button>
+          <button data-value="buttons">Кнопки на экране</button>
         </div>
       </div>
       <button class="btn" data-action="back">Готово</button>

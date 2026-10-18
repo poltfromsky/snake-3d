@@ -38,6 +38,11 @@ export default [
     },
   },
   {
+    // Service worker игры: обычный скрипт (не модуль) в окружении service worker.
+    files: ['sw.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.serviceworker } },
+  },
+  {
     // Скрипты и тесты, которые запускаются в Node.
     files: ['tools/**/*.mjs', 'tests/**/*.js', 'server/test/**/*.mjs', 'e2e/**/*.js', 'eslint.config.js', 'playwright.config.js'],
     languageOptions: { globals: { ...globals.node } },

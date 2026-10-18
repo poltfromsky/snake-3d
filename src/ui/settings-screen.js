@@ -1,4 +1,4 @@
-/** Экран «Настройки»: ник, громкость, скорость, тема, камера. Всё сохраняется сразу. */
+/** Экран «Настройки»: ник, громкость, скорость, тема, камера, управление. Всё сохраняется сразу. */
 import { saveSettings, SPEED_FACTORS } from '../storage.js';
 import { $, markActive } from './dom.js';
 import { bindNameInput } from './nickname.js';
@@ -7,7 +7,7 @@ import { bindNameInput } from './nickname.js';
  * @param {object} deps
  * @param {object} deps.settings настройки (меняются на месте)
  * @param {import('../audio/audio.js').AudioManager} deps.audio
- * @param {{onSpeed(f: number): void, onTheme(): void, onCamera(v: string): void}} deps.hooks
+ * @param {{onSpeed(f: number): void, onTheme(): void, onCamera(v: string): void, onControls(v: string): void}} deps.hooks
  */
 export function createSettingsScreen({ settings, audio, hooks }) {
   const nameField = bindNameInput($('#set-name'), settings);
@@ -19,6 +19,7 @@ export function createSettingsScreen({ settings, audio, hooks }) {
     markActive($('#set-speed'), 'value', settings.speed);
     markActive($('#set-theme'), 'value', settings.theme);
     markActive($('#set-camera'), 'value', settings.camera);
+    markActive($('#set-controls'), 'value', settings.controls);
   }
 
   function bindSegmented(id, key, onChange) {
@@ -35,6 +36,7 @@ export function createSettingsScreen({ settings, audio, hooks }) {
   bindSegmented('#set-speed', 'speed', (v) => hooks.onSpeed(SPEED_FACTORS[v]));
   bindSegmented('#set-theme', 'theme', () => hooks.onTheme());
   bindSegmented('#set-camera', 'camera', (v) => hooks.onCamera(v));
+  bindSegmented('#set-controls', 'controls', (v) => hooks.onControls(v));
 
   for (const [id, key] of [['#set-music', 'musicVolume'], ['#set-sfx', 'sfxVolume']]) {
     $(id).addEventListener('input', (e) => {

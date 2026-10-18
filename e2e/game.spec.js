@@ -5,28 +5,9 @@
  */
 import { expect, test } from '@playwright/test';
 
-const BASE_SETTINGS = {
-  musicVolume: 0, sfxVolume: 0, speed: 'normal', theme: 'neon', camera: 'angled', mode: 'walls',
-};
-
-/** Открывает игру в тестовом режиме с заданными настройками и собирает ошибки страницы. */
-async function openGame(page, settings = {}) {
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    // Сбой загрузки внешнего ресурса (шрифт, CDN) — не ошибка нашего кода.
-    if (m.type() === 'error' && !m.text().includes('Failed to load resource')) errors.push(`console: ${m.text()}`);
-  });
-  // Только в чистое хранилище: после перезагрузки страницы остаётся то, что сохранила игра.
-  await page.addInitScript((s) => {
-    if (!localStorage.getItem('snake3d.settings.v1')) localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
-  }, { ...BASE_SETTINGS, ...settings });
-  await page.goto('/?e2e');
-  await expect(page.locator('#screen-menu')).toBeVisible();
-  return errors;
-}
-
-const gameState = (page) => page.evaluate(() => globalThis.__snakeE2E.state);
+import {
+  gameState, openGame, openGameFromLink,
+} from './helpers.js';
 
 test('одиночная игра: удар о стену → экран «Игра окончена»', async ({ page }) => {
   const errors = await openGame(page);
@@ -38,7 +19,8 @@ test('одиночная игра: удар о стену → экран «Иг�
   expect(errors).toEqual([]);
 });
 
-test('одна клавиатура: WASD у первого игрока, стрелки у второго, итог и реванш', async ({ page }) => {
+test('одна клавиатура: WASD у первого игрока, стрелки у второго, итог и реванш', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'на телефоне клавиатуры нет — режим спрятан');
   const errors = await openGame(page);
   await page.locator('[data-action="local"]').click();
   await page.keyboard.press('KeyW');
@@ -129,18 +111,6 @@ test('онлайн: комната по ссылке, оба видят итог
   await host.close();
   await guest.close();
 });
-
-/** Гость открывает ссылку друга — настройки у него свои, режим задаёт создатель. */
-async function openGameFromLink(page, url, settings = {}) {
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().includes('Failed to load resource')) errors.push(`console: ${m.text()}`);
-  });
-  await page.addInitScript((s) => localStorage.setItem('snake3d.settings.v1', JSON.stringify(s)), { ...BASE_SETTINGS, ...settings });
-  await page.goto(url);
-  return errors;
-}
 
 test('отзыв уходит на сервер и игрок видит ответ', async ({ page }) => {
   const errors = await openGame(page);

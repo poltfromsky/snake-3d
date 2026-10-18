@@ -72,8 +72,10 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: server
-      - name: Браузер для тестов
-        run: npx playwright install --with-deps chromium
+      - name: Браузеры для тестов (Chromium — Android и компьютер, WebKit — iPhone, Firefox)
+        run: npx playwright install --with-deps chromium webkit firefox
+      - name: Service worker как на сайте (с версией и списком файлов)
+        run: node tools/stamp-sw.mjs "ci-${GITHUB_SHA::12}"
       - name: Секретная соль для локального сервера (своя на каждый прогон)
         run: echo "IP_SALT=$(openssl rand -hex 32)" > server/.dev.vars
       - name: Браузерные сценарии
@@ -135,8 +137,10 @@ jobs:
         env:
           API_URL: ${{ needs.deploy-server.outputs.api_url }}
         run: |
+          # Service worker получает номер версии и полный список файлов игры (PWA).
+          node tools/stamp-sw.mjs "${GITHUB_SHA::12}"
           mkdir _site
-          cp -r index.html styles.css src assets _site/
+          cp -r index.html styles.css manifest.webmanifest sw.js src assets _site/
           # Адрес сервера подставляется из только что выполненной выкладки.
           sed -i "s|^const PRODUCTION_API = '';|const PRODUCTION_API = '${API_URL}';|" _site/src/config.js
           grep -q "PRODUCTION_API = 'https://" _site/src/config.js

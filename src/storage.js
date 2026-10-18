@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   speed: 'normal', // slow | normal | fast
   theme: 'neon', // neon | forest | sunset
   camera: 'angled', // angled | top
+  controls: 'swipe', // swipe | buttons — управление на сенсорном экране
   mode: 'classic',
   playerName: '', // один ник на всю игру: рекорды, отзыв, онлайн
 });

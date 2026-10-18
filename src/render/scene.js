@@ -12,6 +12,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { ITEM, MODES } from '../core/game.js';
+import { cameraLayout, fovFor, screenToField } from './camera-fit.js';
 
 export const THEMES = Object.freeze({
   neon: {
@@ -56,6 +57,8 @@ export class SceneRenderer {
     this.lookAt = new THREE.Vector3();
     this.shake = 0;
     this.cameraMode = 'angled';
+    this.focusIndex = 0;
+    this.layout = null; // раскладка камеры под поле и экран (camera-fit.js)
     this.clock = new THREE.Clock();
 
     this.boardGroup = new THREE.Group();
@@ -100,9 +103,11 @@ export class SceneRenderer {
     this.size = { width, height };
     this.theme = THEMES[settings.theme] ?? THEMES.neon;
     this.cameraMode = settings.camera;
+    this.focusIndex = focusIndex;
 
     this.scene.background = new THREE.Color(this.theme.background);
     this.scene.fog = new THREE.Fog(this.theme.background, 28, 60);
+    this.updateLayout();
 
     this.boardGroup.clear();
     this.buildBoard(width, height, mode === MODES.WALLS);
@@ -386,32 +391,64 @@ export class SceneRenderer {
     this.shake = strength;
   }
 
+  /** Пересчитывает камеру и туман под текущие поле, экран и камеру из настроек. */
+  updateLayout() {
+    if (!this.size) return;
+    this.layout = cameraLayout({
+      aspect: this.camera.aspect, field: this.size, focusIndex: this.focusIndex, mode: this.cameraMode,
+    });
+    // Туман зависит от того, насколько далеко камера: иначе на узком экране
+    // отъехавшая камера «топила» поле в темноте.
+    if (this.scene.fog) {
+      this.scene.fog.near = this.layout.fogNear;
+      this.scene.fog.far = this.layout.fogFar;
+    }
+  }
+
+  /** Поворот камеры на четверть оборота: 0, 1 или -1 (см. camera-fit.js). */
+  get turn() {
+    return this.layout?.turn ?? 0;
+  }
+
+  /** Направление свайпа или стрелки на экране → направление на поле. */
+  toFieldDirection(dir) {
+    return screenToField(dir, this.turn);
+  }
+
+  set cameraMode(value) {
+    this.cameraModeValue = value;
+    this.updateLayout();
+  }
+
+  get cameraMode() {
+    return this.cameraModeValue;
+  }
+
   placeCamera(headCell, instant, dt = 0.016) {
-    const { width, height } = this.size;
-    // Расстояние, при котором поле целиком помещается в кадр с отступом.
-    const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
-    const fitH = (height + 2) / 2 / Math.tan(halfFov);
-    const fitW = (width + 2) / 2 / Math.tan(halfFov) / this.camera.aspect;
-    const distance = Math.max(fitH, fitW);
+    const {
+      distance, back, up, angledHeight, angledBack,
+    } = this.layout;
     const top = this.cameraMode === 'top';
+    // Наклонная камера смотрит чуть ближе к себе, чтобы ближний край поля не обрезался.
     const lookShift = top ? 0 : 1.2;
 
     // Камера слегка следует за головой.
     const hp = this.cellToWorld(headCell.x, headCell.y);
-    tmpVec.set(hp.x * 0.08, 0, hp.z * 0.08 + lookShift);
+    tmpVec.set(hp.x * 0.08 + back.x * lookShift, 0, hp.z * 0.08 + back.z * lookShift);
     const k = instant ? 1 : 1 - Math.exp(-dt * 3);
     this.lookAt.lerp(tmpVec, k);
 
     if (top) {
-      // Строго над точкой взгляда, «верх кадра» — дальний край поля. Если оставить
+      // Строго над точкой взгляда, «верх кадра» задан явно. Если оставить
       // верх вертикальным, он почти совпадает с направлением взгляда, ориентация
       // становится неустойчивой и от любой тряски поле разворачивает боком.
-      this.camera.up.set(0, 0, -1);
+      this.camera.up.set(up.x, 0, up.z);
       this.cameraTarget.set(this.lookAt.x, distance, this.lookAt.z);
     } else {
       // Наклон ~55°: объём читается, а дальний край не уходит в точку.
       this.camera.up.set(0, 1, 0);
-      this.cameraTarget.set(0, distance * 1.02, distance * 0.62 + lookShift).add(tmpVec);
+      this.cameraTarget.set(back.x * distance * angledBack, distance * angledHeight, back.z * distance * angledBack)
+        .add(tmpVec);
     }
     if (instant) this.cameraBase.copy(this.cameraTarget);
     else this.cameraBase.lerp(this.cameraTarget, k);
@@ -432,9 +469,11 @@ export class SceneRenderer {
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
-    // На узком экране отодвигаем камеру, чтобы поле влезало целиком.
-    this.camera.fov = w / h < 1 ? 62 : 45;
+    // На узком экране шире угол обзора, чтобы поле влезало целиком.
+    this.camera.fov = fovFor(w / h);
     this.camera.updateProjectionMatrix();
+    // Повернули телефон — поле поворачивается вместе с экраном (камера доедет плавно).
+    this.updateLayout();
   }
 }
 

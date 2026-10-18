@@ -12,7 +12,8 @@ import { SceneRenderer } from './render/scene.js';
 import { AudioManager, MUSIC_LICENSE, MUSIC_TRACKS } from './audio/audio.js';
 import { Leaderboard } from './net/leaderboard.js';
 import { API_BASE, APP_VERSION } from './config.js';
-import { exposeForTests } from './e2e.js';
+import { E2E, exposeForTests } from './e2e.js';
+import { registerServiceWorker, setupInstall } from './pwa.js';
 import { loadSettings, saveSettings, SPEED_FACTORS } from './storage.js';
 import { StateMachine, STATES } from './app/state-machine.js';
 import {
@@ -29,6 +30,7 @@ import {
   renderCredits, renderHud, showScreen, showTimer,
 } from './ui/screens.js';
 import { createSettingsScreen } from './ui/settings-screen.js';
+import { isTouchDevice, WakeLock } from './ui/device.js';
 
 const { MENU, LOBBY, COUNTDOWN, PLAYING, PAUSED, OVER } = STATES;
 
@@ -57,7 +59,13 @@ const achievementToasts = new AchievementToasts(
   (rarity) => audio.play(rarity === 'legendary' ? 'achievementLegendary' : 'achievement'),
 );
 
-const app = new StateMachine(MENU);
+const wakeLock = new WakeLock();
+// Что зависит только от экрана, а не от того, как в него попали, — здесь.
+const app = new StateMachine(MENU, (_from, to) => {
+  // Пока идёт партия, телефон не гасит экран.
+  wakeLock.set(to === PLAYING || to === COUNTDOWN);
+  updateDpad();
+});
 let mode = createSolo();
 let replay = null; // как начать такую же партию заново (реванш)
 let screen = 'menu'; // какой оверлей сейчас виден (null — только игра)
@@ -346,6 +354,7 @@ const settingsScreen = createSettingsScreen({
     // Тема меняется только в меню, чтобы не сбрасывать текущую партию.
     onTheme: () => { if (app.is(MENU)) setupScene(); },
     onCamera: (value) => { renderer.cameraMode = value; },
+    onControls: () => updateDpad(),
   },
 });
 
@@ -366,8 +375,9 @@ $('#mode-select').addEventListener('click', (e) => {
 
 /* ---------------- Управление ---------------- */
 
+/** dir — направление на экране; если поле повёрнуто под экран телефона, сцена переводит его в направление на поле. */
 function steer(device, dir) {
-  if (app.is(PLAYING)) mode.steer(device, dir);
+  if (app.is(PLAYING)) mode.steer(device, renderer.toFieldDirection(dir));
 }
 
 const isTyping = (target) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
@@ -393,21 +403,49 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Enter' && inMenu) startSolo();
 });
 
-// Свайпы на телефоне.
-let touchStart = null;
+// Свайпы: поворот срабатывает, как только палец сдвинулся на SWIPE_PX, не дожидаясь,
+// пока его отпустят. Палец можно вести дальше — следующий поворот считается от точки,
+// где сработал предыдущий, так что «вверх, потом вправо» делается одним движением.
+const SWIPE_PX = 18;
+let touch = null;
 const canvas = $('#scene');
 canvas.addEventListener('pointerdown', (e) => {
   audio.unlock();
-  touchStart = { x: e.clientX, y: e.clientY };
+  touch = { id: e.pointerId, x: e.clientX, y: e.clientY };
 });
-canvas.addEventListener('pointerup', (e) => {
-  if (!touchStart || !app.is(PLAYING)) return;
-  const dx = e.clientX - touchStart.x;
-  const dy = e.clientY - touchStart.y;
-  touchStart = null;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP');
+canvas.addEventListener('pointermove', (e) => {
+  if (!touch || e.pointerId !== touch.id || !app.is(PLAYING)) return;
+  const dx = e.clientX - touch.x;
+  const dy = e.clientY - touch.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_PX) return;
+  steer('touch', Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP'));
+  touch.x = e.clientX;
+  touch.y = e.clientY;
+});
+for (const type of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(type, (e) => { if (touch?.id === e.pointerId) touch = null; });
+}
+
+// Кнопки-стрелки на экране (настройка «Управление → Кнопки на экране»).
+function updateDpad() {
+  const visible = settings.controls === 'buttons' && isTouchDevice() && app.is(PLAYING, COUNTDOWN);
+  $('#dpad').classList.toggle('hidden', !visible);
+}
+$('#dpad').addEventListener('pointerdown', (e) => {
+  const dir = e.target.closest('[data-dir]')?.dataset.dir;
+  if (!dir) return;
+  e.preventDefault(); // без увеличения по двойному касанию
+  audio.unlock();
   steer('touch', dir);
+});
+
+// Повернули телефон в меню — поле на фоне тоже разворачивается (вертикальное ↔ горизонтальное).
+window.addEventListener('resize', () => {
+  if (!app.is(MENU) || mode.kind !== 'solo') return;
+  const narrow = window.innerWidth < window.innerHeight;
+  if (narrow === mode.game.opts.height > mode.game.opts.width) return;
+  setMode(createSolo());
+  setupScene();
 });
 
 // Свернули вкладку — ставим паузу, чтобы змейка не разбилась без игрока.
@@ -451,6 +489,8 @@ const ACTIONS = {
     settingsScreen.render();
     show('settings');
   },
+  install: () => installer.install(),
+  update: () => updater.applyUpdate(),
   back: () => {
     if (backTo === 'menu') toMenu();
     else show(backTo);
@@ -467,12 +507,27 @@ document.addEventListener('click', (e) => {
 
 /* ---------------- Старт ---------------- */
 
+// На маленьком экране «Как играть» свёрнут: меню помещается почти без прокрутки.
+if (window.matchMedia('(max-width: 520px), (max-height: 700px)').matches) $('.howto').open = false;
+
+// Игра как приложение: установка и обновления (src/pwa.js, sw.js).
+const installer = setupInstall({
+  setVisible: (visible) => $('#btn-install').classList.toggle('hidden', !visible),
+  showIOSHelp: () => openFromMenu('install'),
+});
+const updater = registerServiceWorker({
+  onUpdateReady: () => $('#update-banner').classList.remove('hidden'),
+  // Локально service worker нужен только автотестам, при обычной разработке он не включается.
+  enabled: E2E || !['localhost', '127.0.0.1'].includes(window.location.hostname),
+});
+
 renderBotButtons(achievements);
 // Только с ?e2e в адресе: доступ для браузерных автотестов (см. src/e2e.js).
 exposeForTests({
   get kind() { return mode.kind; },
   get state() { return app.state; },
   get game() { return mode.game; },
+  get turn() { return renderer.turn; },
 });
 markActive($('#mode-select'), 'mode', settings.mode);
 // Общая таблица и отзывы появляются, только когда подключена база.

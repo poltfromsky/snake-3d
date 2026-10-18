@@ -45,9 +45,13 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   /* Двойной клик по интерфейсу не выделяет текст. */
   user-select: none;
+  -webkit-user-select: none;
+  /* Свайп в игре не должен обновлять страницу или листать её «резинкой». */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
-input, textarea { user-select: text; }
+input, textarea { user-select: text; -webkit-user-select: text; }
 
 #scene {
   position: fixed;
@@ -65,8 +69,14 @@ input, textarea { user-select: text; }
   position: fixed;
   inset: 0;
   display: grid;
+  /* Одна колонка по ширине экрана: без этого колонка растягивалась под самое
+     широкое содержимое, и меню на телефоне вылезало за правый край. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 16px;
+  /* Отступы с учётом выреза экрана и полоски «домой» на телефонах. */
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overscroll-behavior: contain;
   background: radial-gradient(ellipse at center, color-mix(in srgb, var(--bg) 55%, transparent), color-mix(in srgb, var(--bg) 92%, transparent));
   backdrop-filter: blur(6px);
   animation: fade 0.25s ease-out;
@@ -75,6 +85,7 @@ input, textarea { user-select: text; }
 
 .panel {
   width: min(460px, 100%);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -112,7 +123,8 @@ h2 { font-size: 26px; }
 .credits a { color: var(--muted); }
 
 .row { display: flex; gap: 10px; }
-.row > * { flex: 1; }
+/* min-width: 0 — кнопки в ряду ужимаются по ширине экрана, а не выталкивают соседей за край. */
+.row > * { flex: 1; min-width: 0; }
 
 /* ---------- Кнопки ---------- */
 .btn {
@@ -611,3 +623,86 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .screen, .toast.show { animation: none; }
 }
+
+/* ---------- Телефоны и планшеты ---------- */
+/* Сенсорный экран без мыши: прячем клавиатурное, показываем подсказки для пальцев.
+   !important — иначе их перебивают более точные правила списков и полей. */
+@media not all and (hover: none) and (pointer: coarse) {
+  .touch-only { display: none !important; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .keyboard-only { display: none !important; }
+  .btn:hover { background: rgba(255, 255, 255, 0.06); }
+}
+
+/* Длинные подсказки переносятся, а не растягивают панель. */
+.keycaps { flex-wrap: wrap; min-width: 0; }
+
+@media (max-width: 400px) {
+  /* Три кнопки в ряд («Рекорды · Достижения · Настройки») на самом узком телефоне. */
+  .row { gap: 6px; }
+  .row > .btn { padding-left: 4px; padding-right: 4px; font-size: 13px; }
+}
+
+@media (max-width: 520px) {
+  .screen { padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .panel { gap: 10px; border-radius: 20px; }
+  .btn { padding: 12px 14px; }
+}
+
+/* Невысокие экраны (телефон боком, маленькие телефоны): меню компактнее. */
+@media (max-height: 700px) {
+  .panel { gap: 8px; padding-top: 18px; padding-bottom: 18px; }
+  h1 { font-size: clamp(28px, 7vh, 44px); }
+  .subtitle { margin-bottom: 0; }
+}
+
+/* Кнопки-стрелки: крупные, у нижнего края, под большой палец. */
+.dpad {
+  position: fixed;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(3, 64px);
+  grid-template-areas: ". up ." "left . right" ". down .";
+  gap: 6px;
+  touch-action: none;
+  z-index: 5;
+}
+
+.dpad button {
+  font-size: 22px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  touch-action: none;
+}
+
+.dpad button:active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.dpad [data-dir="UP"] { grid-area: up; }
+.dpad [data-dir="LEFT"] { grid-area: left; }
+.dpad [data-dir="RIGHT"] { grid-area: right; }
+.dpad [data-dir="DOWN"] { grid-area: down; }
+
+/* Плашка «вышла новая версия» — первой строкой в меню: ничего не перекрывает. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 14px;
+  font-size: 14px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.update-banner .btn { padding: 8px 14px; font-size: 14px; }
+
+.install-steps { margin: 0; padding-left: 22px; text-align: left; line-height: 1.5; color: var(--muted); }
+.install-steps b { color: var(--text); }

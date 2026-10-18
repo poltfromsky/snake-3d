@@ -2,10 +2,20 @@
  * Браузерные автотесты (Playwright): настоящая игра в настоящем браузере.
  * Запуск: `npm run e2e`. Поднимает сайт (tools/serve.mjs) и игровой сервер
  * (wrangler dev в server/), если они ещё не запущены.
+ *
+ * Четыре устройства — три движка, на которых работают почти все браузеры:
+ *   desktop-chrome  — Chromium: Chrome, Edge, Яндекс, Opera на компьютере;
+ *   android-chrome  — Chromium с экраном и сенсором Pixel 7: Chrome, Samsung Internet,
+ *                     Яндекс и браузер Telegram на Android;
+ *   iphone-safari   — WebKit с экраном iPhone 14: на iPhone все браузеры работают на WebKit;
+ *   desktop-firefox — Firefox.
+ * Один проект: `npx playwright test --project=iphone-safari`.
  */
 import { defineConfig, devices } from '@playwright/test';
 
 const CI = Boolean(process.env.CI);
+// WebGL без видеокарты (программный рендер), звук без клика пользователя.
+const CHROMIUM_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'];
 
 export default defineConfig({
   testDir: 'e2e',
@@ -21,12 +31,16 @@ export default defineConfig({
     trace: 'off',
     video: 'off',
     screenshot: 'off',
-    launchOptions: {
-      // WebGL без видеокарты (программный рендер), звук без клика пользователя.
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'],
-    },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'desktop-chrome', use: { ...devices['Desktop Chrome'], launchOptions: { args: CHROMIUM_ARGS } } },
+    { name: 'android-chrome', use: { ...devices['Pixel 7'], launchOptions: { args: CHROMIUM_ARGS } } },
+    { name: 'iphone-safari', use: { ...devices['iPhone 14'] } },
+    {
+      name: 'desktop-firefox',
+      use: { ...devices['Desktop Firefox'], launchOptions: { firefoxUserPrefs: { 'media.autoplay.default': 0 } } },
+    },
+  ],
   webServer: [
     {
       command: 'node tools/serve.mjs',
