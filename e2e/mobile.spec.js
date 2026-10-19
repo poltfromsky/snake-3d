@@ -80,6 +80,59 @@ test.describe('телефон', () => {
     expect(errors).toEqual([]);
   });
 
+  // Змейка почти стоит: между событиями пальца она не успевает сделать шаг и очередь поворотов не пустеет.
+  const freeze = (page) => page.evaluate(() => { globalThis.__snakeE2E.game.opts.speedFactor = 0.02; });
+  const queue = (page) => page.evaluate(() => globalThis.__snakeE2E.game.turnQueue.map((d) => `${d.x},${d.y}`));
+
+  test('свайп с лёгким уводом в сторону — один поворот, а не «вверх и ещё вправо»', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic' });
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await freeze(page);
+    // Палец ведёт вверх на 140 px, но уходит вправо на ~20°: раньше это давало «вверх, вправо».
+    const path = Array.from({ length: 14 }, (_, i) => ({ x: 200 + (i + 1) * 3.6, y: 500 - (i + 1) * 10 }));
+    await swipe(page, { x: 200, y: 500 }, path);
+    expect(await queue(page)).toEqual(['0,-1']);
+    await releaseFinger(page);
+    expect(errors).toEqual([]);
+  });
+
+  test('три быстрых свайпа подряд не теряются: очередь поворотов вмещает три', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic' });
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await freeze(page);
+    // Змейка едет вправо: вверх, влево, вниз — три допустимых поворота подряд.
+    await swipe(page, { x: 200, y: 500 }, [{ x: 200, y: 470 }]);
+    await swipe(page, { x: 200, y: 500 }, [{ x: 170, y: 500 }]);
+    await swipe(page, { x: 200, y: 500 }, [{ x: 200, y: 530 }]);
+    expect(await queue(page)).toEqual(['0,-1', '-1,0', '0,1']);
+    await releaseFinger(page);
+    expect(errors).toEqual([]);
+  });
+
+  test('кнопки-стрелки: нажатие рядом с кнопкой работает, подсветка снимается при отпускании', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic', controls: 'buttons' });
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await freeze(page);
+    await expect(page.locator('#dpad')).toBeVisible();
+    // Нажимаем над верхней кнопкой, на поле вокруг креста: сами кнопки там не лежат.
+    const pressed = await page.evaluate(() => {
+      const dpad = globalThis.document.querySelector('#dpad');
+      const r = dpad.getBoundingClientRect();
+      const fire = (type) => dpad.dispatchEvent(new globalThis.PointerEvent(type, {
+        pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true,
+        clientX: r.left + r.width / 2, clientY: r.top - 14,
+      }));
+      fire('pointerdown');
+      const during = [...dpad.querySelectorAll('.pressed')].map((b) => b.dataset.dir);
+      fire('pointerup');
+      return { during, after: dpad.querySelectorAll('.pressed').length };
+    });
+    expect(pressed.during).toEqual(['UP']);
+    expect(pressed.after, 'подсветка снята сразу после отпускания').toBe(0);
+    expect(await queue(page)).toEqual(['0,-1']);
+    expect(errors).toEqual([]);
+  });
+
   test('дуэль на вертикальном экране повёрнута: своя змейка внизу, свайп вверх — к сопернику', async ({ page }) => {
     const errors = await openGame(page, { mode: 'classic' });
     await page.locator('[data-action="bot"][data-level="easy"]').click();

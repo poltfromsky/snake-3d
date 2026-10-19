@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DIRECTIONS, Game, ITEM, MODES } from '../src/core/game.js';
+import {
+  DIRECTIONS, Game, ITEM, MAX_QUEUED_TURNS, MODES,
+} from '../src/core/game.js';
 
 /** Предсказуемый генератор: всегда возвращает одно и то же число. */
 const fixedRng = (value = 0) => () => value;
@@ -42,6 +44,19 @@ test('два быстрых поворота применяются по оче�
   assert.deepEqual(game.direction, DIRECTIONS.UP);
   game.step();
   assert.deepEqual(game.direction, DIRECTIONS.LEFT);
+});
+
+test('очередь поворотов вмещает три быстрых поворота подряд, четвёртый не принимается', () => {
+  assert.equal(MAX_QUEUED_TURNS, 3);
+  const game = makeGame();
+  assert.equal(game.turn(DIRECTIONS.UP), true);
+  assert.equal(game.turn(DIRECTIONS.LEFT), true);
+  assert.equal(game.turn(DIRECTIONS.DOWN), true);
+  assert.equal(game.turn(DIRECTIONS.RIGHT), false, 'очередь заполнена');
+  for (const expected of [DIRECTIONS.UP, DIRECTIONS.LEFT, DIRECTIONS.DOWN]) {
+    game.step();
+    assert.deepEqual(game.direction, expected);
+  }
 });
 
 test('классический режим: проход сквозь стену', () => {

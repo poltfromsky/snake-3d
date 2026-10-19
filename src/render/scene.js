@@ -12,7 +12,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { ITEM, MODES } from '../core/game.js';
-import { cameraLayout, fovFor, screenToField } from './camera-fit.js';
+import {
+  approachPoint, cameraLayout, fovFor, screenToField,
+} from './camera-fit.js';
 
 export const THEMES = Object.freeze({
   neon: {
@@ -41,6 +43,13 @@ const tmpScale = new THREE.Vector3();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const shakeOffset = new THREE.Vector3();
 const shakeTarget = new THREE.Vector3();
+
+/** Слежение камеры за головой: мягко и не быстрее MAX_SPEED (единиц поля в секунду). */
+const FOLLOW_RATE = 2.5;
+const LOOK_MAX_SPEED = 1.1;
+const BASE_MAX_SPEED = 1.3;
+/** Насколько камера сдвигается вслед за головой (доля её смещения от центра поля). */
+const FOLLOW_SHARE = 0.06;
 
 export class SceneRenderer {
   /**
@@ -79,7 +88,7 @@ export class SceneRenderer {
     // Свечение ярких объектов (bloom) — неоновый вид без текстур.
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.4, 0.45, 0.88);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.4, 0.88);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -99,7 +108,9 @@ export class SceneRenderer {
     s.left = -18; s.right = 18; s.top = 18; s.bottom = -18; s.far = 60;
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
-    this.headLight = new THREE.PointLight(0xffffff, 3, 5, 2);
+    // Подсветка клеток вокруг головы: слабая и с малым радиусом, иначе вокруг змейки
+    // загорается заметный «маяк» 3×3 клетки, который отвлекает от игры.
+    this.headLight = new THREE.PointLight(0xffffff, 1.2, 3.2, 2);
     this.scene.add(this.headLight);
   }
 
@@ -440,9 +451,9 @@ export class SceneRenderer {
 
     // Камера слегка следует за головой.
     const hp = this.cellToWorld(headCell.x, headCell.y);
-    tmpVec.set(hp.x * 0.08 + back.x * lookShift, 0, hp.z * 0.08 + back.z * lookShift);
-    const k = instant ? 1 : 1 - Math.exp(-dt * 3);
-    this.lookAt.lerp(tmpVec, k);
+    tmpVec.set(hp.x * FOLLOW_SHARE + back.x * lookShift, 0, hp.z * FOLLOW_SHARE + back.z * lookShift);
+    if (instant) this.lookAt.copy(tmpVec);
+    else this.lookAt.copy(approachPoint(this.lookAt, tmpVec, dt, { rate: FOLLOW_RATE, maxSpeed: LOOK_MAX_SPEED }));
 
     if (top) {
       // Строго над точкой взгляда, «верх кадра» задан явно. Если оставить
@@ -457,7 +468,7 @@ export class SceneRenderer {
         .add(tmpVec);
     }
     if (instant) this.cameraBase.copy(this.cameraTarget);
-    else this.cameraBase.lerp(this.cameraTarget, k);
+    else this.cameraBase.copy(approachPoint(this.cameraBase, this.cameraTarget, dt, { rate: FOLLOW_RATE, maxSpeed: BASE_MAX_SPEED }));
 
     // Тряска — сдвиг всей камеры вместе с точкой взгляда, без поворота кадра.
     shakeOffset.set(0, 0, 0);

@@ -18,6 +18,14 @@ test('две змейки стартуют на разных половинах 
   assert.deepEqual(b.direction, DIRECTIONS.LEFT);
 });
 
+test('в дуэли тоже три быстрых поворота подряд помнятся', () => {
+  const duel = makeDuel();
+  assert.equal(duel.turn(0, DIRECTIONS.UP), true);
+  assert.equal(duel.turn(0, DIRECTIONS.LEFT), true);
+  assert.equal(duel.turn(0, DIRECTIONS.DOWN), true);
+  assert.equal(duel.turn(0, DIRECTIONS.RIGHT), false);
+});
+
 test('без поворотов змейки не сталкиваются сразу после старта', () => {
   const duel = makeDuel();
   for (let i = 0; i < 30; i += 1) duel.step();

@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { cameraLayout, quarterTurn, screenToField } from '../src/render/camera-fit.js';
+import {
+  approachPoint, cameraLayout, quarterTurn, screenToField,
+} from '../src/render/camera-fit.js';
 
 // Популярные экраны в CSS-пикселях: телефоны, планшет, ноутбуки, телефон боком.
 const SCREENS = {
@@ -93,4 +95,35 @@ test('экранные направления переводятся в напр
   // Свайп вверх ведёт свою змейку «вперёд», к сопернику.
   assert.equal(screenToField('UP', 1), 'RIGHT');
   assert.equal(screenToField('UP', -1), 'LEFT');
+});
+
+test('камера плавно доезжает до цели и не обгоняет её', () => {
+  let p = { x: 0, y: 0, z: 0 };
+  const target = { x: 1, y: 0, z: -2 };
+  for (let i = 0; i < 600; i += 1) {
+    p = approachPoint(p, target, 1 / 60, { rate: 2.5, maxSpeed: 1.1 });
+    assert.ok(Math.abs(p.x) <= 1 + 1e-9 && p.z >= -2 - 1e-9, 'не проскакивает цель');
+  }
+  assert.ok(Math.hypot(p.x - target.x, p.z - target.z) < 0.01, 'за 10 секунд доехала');
+});
+
+test('прыжок головы через стену не дёргает камеру: скорость камеры ограничена', () => {
+  // Голова перескочила на другой край поля (24 клетки): цель камеры сдвинулась сразу далеко.
+  let p = { x: 0, y: 0, z: 0 };
+  const jump = { x: 24 * 0.06, y: 0, z: 0 };
+  const maxSpeed = 1.1;
+  for (let i = 0; i < 120; i += 1) {
+    const next = approachPoint(p, jump, 1 / 60, { rate: 2.5, maxSpeed });
+    const speed = Math.hypot(next.x - p.x, next.y - p.y, next.z - p.z) * 60;
+    assert.ok(speed <= maxSpeed + 1e-9, `скорость ${speed.toFixed(3)} выше предела`);
+    p = next;
+  }
+});
+
+test('обычное следование за головой не упирается в ограничение скорости', () => {
+  // Голова идёт по 12 клеток в секунду, камера повторяет 6% её смещения: 0,72 ед./с < предела.
+  const p = { x: 0, y: 0, z: 0 };
+  const next = approachPoint(p, { x: 12 * 0.06 / 60, y: 0, z: 0 }, 1 / 60, { rate: 2.5, maxSpeed: 1.1 });
+  const free = (12 * 0.06 / 60) * (1 - Math.exp(-2.5 / 60));
+  assert.ok(Math.abs(next.x - free) < 1e-12);
 });

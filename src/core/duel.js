@@ -4,7 +4,9 @@
  * Как и Game, класс не знает про отрисовку и сеть. В онлайне его запускает
  * только хозяин комнаты, а гость получает готовые снимки состояния.
  */
-import { DEFAULTS, DIRECTIONS, ITEM, MODES, sameCell } from './game.js';
+import {
+  DEFAULTS, DIRECTIONS, ITEM, MAX_QUEUED_TURNS, MODES, sameCell,
+} from './game.js';
 
 const SCORE = { [ITEM.APPLE]: 10, [ITEM.BAD]: -5 };
 
@@ -78,7 +80,7 @@ export class Duel {
     const p = this.players[index];
     if (!p || !p.alive) return false;
     const last = p.turnQueue.at(-1) ?? p.direction;
-    if (sameCell(dir, last) || isOpposite(dir, last) || p.turnQueue.length >= 2) return false;
+    if (sameCell(dir, last) || isOpposite(dir, last) || p.turnQueue.length >= MAX_QUEUED_TURNS) return false;
     p.turnQueue.push(dir);
     return true;
   }

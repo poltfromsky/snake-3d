@@ -23,6 +23,7 @@ export class AudioManager {
     this.sfxVolume = 0.7;
     this.music = null;
     this.trackIndex = 0;
+    this.fadeTimer = null;
   }
 
   /**
@@ -50,6 +51,7 @@ export class AudioManager {
 
   startMusic() {
     if (!MUSIC_TRACKS.length) return;
+    this.cancelFade();
     if (!this.music) {
       this.music = new Audio();
       this.music.addEventListener('ended', () => this.nextTrack());
@@ -73,7 +75,36 @@ export class AudioManager {
   }
 
   pauseMusic() {
+    this.cancelFade();
     this.music?.pause();
+  }
+
+  /**
+   * Плавно убирает музыку и ставит на паузу. Нужна на итогах партии: иначе фон играет
+   * как ни в чём не бывало и заглушает звук проигрыша. На iPhone громкость у <audio>
+   * программно не меняется — там музыка просто остановится в конце затухания.
+   */
+  fadeOutMusic(ms = 450) {
+    const { music } = this;
+    if (!music || music.paused) return;
+    this.cancelFade();
+    const from = music.volume;
+    const started = Date.now();
+    this.fadeTimer = setInterval(() => {
+      const t = Math.min((Date.now() - started) / ms, 1);
+      music.volume = from * (1 - t);
+      if (t < 1) return;
+      this.cancelFade();
+      music.pause();
+      music.volume = this.musicVolume;
+    }, 40);
+  }
+
+  cancelFade() {
+    if (this.fadeTimer === null) return;
+    clearInterval(this.fadeTimer);
+    this.fadeTimer = null;
+    if (this.music) this.music.volume = this.musicVolume;
   }
 
   /** Музыка ускоряется вместе со змейкой: от 1.0 до 1.25. */
@@ -125,6 +156,10 @@ export class AudioManager {
       case 'die':
         this.tone({ freq: 440, to: 55, duration: 0.7, type: 'sawtooth', gain: 0.25 });
         this.tone({ freq: 220, to: 40, duration: 0.8, type: 'square', gain: 0.15, delay: 0.05 });
+        // Грустная нисходящая фраза после удара — звук проигрыша, который не спутать с ударом.
+        [392, 349, 294, 247].forEach((f, i) => this.tone({
+          freq: f, to: f * 0.96, duration: i === 3 ? 0.7 : 0.22, delay: 0.55 + i * 0.24, type: 'triangle', gain: 0.2,
+        }));
         break;
       case 'click':
         this.tone({ freq: 1200, duration: 0.03, type: 'triangle', gain: 0.12 });

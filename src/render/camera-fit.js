@@ -83,3 +83,26 @@ const SCREEN_TO_FIELD = {
 export function screenToField(dir, turn) {
   return turn ? SCREEN_TO_FIELD[turn][dir] : dir;
 }
+
+/**
+ * Плавно подвигает точку к цели: мягкое приближение с ограничением скорости.
+ * Когда змейка проходит сквозь стену, её голова «перепрыгивает» на другой край поля;
+ * без ограничения скорости камера, следящая за головой, резко дёргалась вслед за прыжком.
+ * Обычное следование за головой на такую скорость не выходит и ограничение не замечает.
+ *
+ * @param {{x: number, y: number, z: number}} current
+ * @param {{x: number, y: number, z: number}} target
+ * @param {number} dt секунды
+ * @param {{rate: number, maxSpeed: number}} options rate — «жёсткость» (1/с), maxSpeed — единиц в секунду
+ * @returns {{x: number, y: number, z: number}} новая точка
+ */
+export function approachPoint(current, target, dt, { rate, maxSpeed }) {
+  const k = 1 - Math.exp(-rate * dt);
+  const dx = (target.x - current.x) * k;
+  const dy = (target.y - current.y) * k;
+  const dz = (target.z - current.z) * k;
+  const length = Math.hypot(dx, dy, dz);
+  const limit = maxSpeed * dt;
+  const scale = length > limit && length > 0 ? limit / length : 1;
+  return { x: current.x + dx * scale, y: current.y + dy * scale, z: current.z + dz * scale };
+}

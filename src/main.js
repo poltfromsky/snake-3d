@@ -18,6 +18,8 @@ import {
   isNewPlayer, loadSettings, loadTutorial, saveSettings, saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
 } from './storage.js';
 import { TutorialMode } from './modes/tutorial-mode.js';
+import { SwipeTracker } from './ui/swipe.js';
+import { setupDpad } from './ui/dpad.js';
 import { controlDevice } from './tutorial/steps.js';
 import { StateMachine, STATES } from './app/state-machine.js';
 import {
@@ -214,6 +216,7 @@ function rematch() {
 
 function soloOver(reason) {
   app.go(OVER);
+  audio.fadeOutMusic();
   audio.play('die');
   audio.setIntensity(0);
   renderer.shakeCamera(0.8);
@@ -242,6 +245,7 @@ function renderDuelResult() {
 
 function duelOver(event) {
   app.go(OVER);
+  audio.fadeOutMusic();
   audio.setIntensity(0);
   renderer.shakeCamera(0.8);
   lastDuel = { event, details: mode.duelResult(event) };
@@ -530,39 +534,38 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Enter' && inMenu) requestStart(startSolo);
 });
 
-// Свайпы: поворот срабатывает, как только палец сдвинулся на SWIPE_PX, не дожидаясь,
-// пока его отпустят. Палец можно вести дальше — следующий поворот считается от точки,
-// где сработал предыдущий, так что «вверх, потом вправо» делается одним движением.
-const SWIPE_PX = 18;
-let touch = null;
+// Свайпы: поворот срабатывает, как только палец явно повёл в сторону, не дожидаясь, пока
+// его отпустят; косые движения и лёгкий увод пальца поворотом не считаются, «вверх, потом
+// вправо» делается одним движением (правила — src/ui/swipe.js).
+const swipe = new SwipeTracker();
+let swipePointer = null;
 const canvas = $('#scene');
 canvas.addEventListener('pointerdown', (e) => {
   audio.unlock();
-  touch = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  swipePointer = e.pointerId;
+  swipe.begin(e.clientX, e.clientY);
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (!touch || e.pointerId !== touch.id || !app.is(PLAYING)) return;
-  const dx = e.clientX - touch.x;
-  const dy = e.clientY - touch.y;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_PX) return;
-  steer('touch', Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP'));
-  touch.x = e.clientX;
-  touch.y = e.clientY;
+  if (e.pointerId !== swipePointer || !app.is(PLAYING)) return;
+  const dir = swipe.move(e.clientX, e.clientY);
+  if (dir) steer('touch', dir);
 });
 for (const type of ['pointerup', 'pointercancel']) {
-  canvas.addEventListener(type, (e) => { if (touch?.id === e.pointerId) touch = null; });
+  canvas.addEventListener(type, (e) => {
+    if (e.pointerId !== swipePointer) return;
+    swipePointer = null;
+    swipe.end();
+  });
 }
 
 // Кнопки-стрелки на экране (настройка «Управление → Кнопки на экране»).
 function updateDpad() {
   const visible = settings.controls === 'buttons' && isTouchDevice() && app.is(PLAYING, COUNTDOWN);
   $('#dpad').classList.toggle('hidden', !visible);
+  if (!visible) dpadControl.release();
   fitSceneToTutorial();
 }
-$('#dpad').addEventListener('pointerdown', (e) => {
-  const dir = e.target.closest('[data-dir]')?.dataset.dir;
-  if (!dir) return;
-  e.preventDefault(); // без увеличения по двойному касанию
+const dpadControl = setupDpad($('#dpad'), (dir) => {
   audio.unlock();
   steer('touch', dir);
 });
@@ -670,6 +673,7 @@ exposeForTests({
   get turn() { return renderer.turn; },
   get theme() { return document.documentElement.dataset.theme; },
   get fieldInsets() { return renderer.insets; },
+  get cameraPosition() { return renderer.camera.position.toArray(); },
   get tutorialStep() { return mode.kind === 'tutorial' ? mode.index : null; },
   // Как будто в фоне скачалась новая версия (сам service worker в тестах не подменить).
   simulateUpdateReady: () => whatsNew.onUpdateReady(),

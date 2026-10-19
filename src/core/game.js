@@ -45,6 +45,12 @@ const SCORE = { [ITEM.APPLE]: 10, [ITEM.BAD]: -5, [ITEM.SLOW]: 5, [ITEM.GHOST]: 
 /** Сравнивает две клетки. */
 export const sameCell = (a, b) => a.x === b.x && a.y === b.y;
 
+/**
+ * Сколько поворотов змейка помнит наперёд. Пальцем и на высокой скорости игрок успевает
+ * сделать несколько поворотов до следующего шага — лишние раньше терялись.
+ */
+export const MAX_QUEUED_TURNS = 3;
+
 const cellKey = (c) => `${c.x},${c.y}`;
 
 const isOpposite = (a, b) => a.x === -b.x && a.y === -b.y;
@@ -110,13 +116,13 @@ export class Game {
   }
 
   /**
-   * Ставит поворот в очередь. Очередь из двух ходов позволяет быстро
-   * нажать «вверх, влево» и не потерять второй поворот.
+   * Ставит поворот в очередь. Очередь из нескольких ходов (MAX_QUEUED_TURNS) позволяет
+   * быстро нажать «вверх, влево, вниз» и не потерять повороты.
    */
   turn(dir) {
     const last = this.turnQueue.at(-1) ?? this.direction;
     if (sameCell(dir, last) || isOpposite(dir, last)) return false;
-    if (this.turnQueue.length >= 2) return false;
+    if (this.turnQueue.length >= MAX_QUEUED_TURNS) return false;
     this.turnQueue.push(dir);
     return true;
   }

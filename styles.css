@@ -704,7 +704,17 @@ kbd {
   grid-template-areas: ". up ." "left . right" ". down .";
   gap: 6px;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
   z-index: 5;
+}
+
+/* Невидимое поле вокруг креста: нажатие чуть мимо кнопки тоже считается (src/ui/dpad.js). */
+.dpad::before {
+  content: '';
+  position: absolute;
+  inset: -28px;
 }
 
 .dpad button {
@@ -725,7 +735,8 @@ kbd {
 .dpad button .icon { width: 26px; height: 26px; }
 #btn-pause .icon { width: 18px; height: 18px; }
 
-.dpad button:active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+/* Подсветку включает и снимает src/ui/dpad.js: :active на некоторых телефонах залипает после отпускания. */
+.dpad button.pressed { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .dpad [data-dir="UP"] { grid-area: up; }
 .dpad [data-dir="LEFT"] { grid-area: left; }
 .dpad [data-dir="RIGHT"] { grid-area: right; }
