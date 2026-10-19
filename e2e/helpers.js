@@ -5,12 +5,18 @@ export const BASE_SETTINGS = {
   musicVolume: 0, sfxVolume: 0, speed: 'normal', theme: 'neon', camera: 'angled', mode: 'walls',
 };
 
-/** Ошибки JavaScript на странице. Сбой загрузки внешнего ресурса (шрифт, CDN) — не ошибка нашего кода. */
+/**
+ * Ошибки JavaScript на странице. Не считаем ошибками нашего кода:
+ *   - сбой загрузки внешнего ресурса (шрифт, CDN);
+ *   - «Navigated away from page» — Firefox так сообщает об оборванном запросе, когда страницу
+ *     перезагружают, пока она ещё что-то грузит. Обычные игроки этого не видят.
+ */
 export function collectErrors(page) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().includes('Failed to load resource')) errors.push(`console: ${m.text()}`);
+    const ignored = ['Failed to load resource', 'Navigated away from page'];
+    if (m.type() === 'error' && !ignored.some((text) => m.text().includes(text))) errors.push(`console: ${m.text()}`);
   });
   return errors;
 }
