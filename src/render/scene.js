@@ -45,11 +45,14 @@ const shakeOffset = new THREE.Vector3();
 const shakeTarget = new THREE.Vector3();
 
 /** Слежение камеры за головой: мягко и не быстрее MAX_SPEED (единиц поля в секунду). */
-const FOLLOW_RATE = 2.5;
-const LOOK_MAX_SPEED = 1.1;
-const BASE_MAX_SPEED = 1.3;
-/** Насколько камера сдвигается вслед за головой (доля её смещения от центра поля). */
-const FOLLOW_SHARE = 0.06;
+const FOLLOW_RATE = 1.5;
+const LOOK_MAX_SPEED = 0.6;
+const BASE_MAX_SPEED = 0.7;
+/**
+ * Насколько камера сдвигается вслед за головой (доля её смещения от центра поля).
+ * Почти неподвижная камера: игроки жаловались, что поле «ездит» за змейкой.
+ */
+const FOLLOW_SHARE = 0.015;
 
 export class SceneRenderer {
   /**
@@ -133,7 +136,7 @@ export class SceneRenderer {
     this.stoneKeys = '';
     this.stonesGroup.clear();
     const focus = view.snakes[focusIndex] ?? view.snakes[0];
-    this.placeCamera(focus.body[0], true);
+    this.placeCamera(this.cellToWorld(focus.body[0].x, focus.body[0].y), true);
   }
 
   buildBoard(width, height, deadlyWalls) {
@@ -247,7 +250,8 @@ export class SceneRenderer {
     this.syncItems(view, time);
     this.syncStones(view);
     this.updateParticles(dt);
-    this.placeCamera(focus.body[0], false, dt);
+    // Цель камеры — плавное положение головы между клетками, а не скачки по клеткам.
+    this.placeCamera(hp, false, dt);
     this.composer.render(dt);
   }
 
@@ -441,7 +445,8 @@ export class SceneRenderer {
     return this.cameraModeValue;
   }
 
-  placeCamera(headCell, instant, dt = 0.016) {
+  /** @param {{x: number, z: number}} hp положение головы на поле (мировые координаты) */
+  placeCamera(hp, instant, dt = 0.016) {
     const {
       distance, back, up, angledHeight, angledBack,
     } = this.layout;
@@ -449,8 +454,7 @@ export class SceneRenderer {
     // Наклонная камера смотрит чуть ближе к себе, чтобы ближний край поля не обрезался.
     const lookShift = top ? 0 : 1.2;
 
-    // Камера слегка следует за головой.
-    const hp = this.cellToWorld(headCell.x, headCell.y);
+    // Камера чуть-чуть следует за головой.
     tmpVec.set(hp.x * FOLLOW_SHARE + back.x * lookShift, 0, hp.z * FOLLOW_SHARE + back.z * lookShift);
     if (instant) this.lookAt.copy(tmpVec);
     else this.lookAt.copy(approachPoint(this.lookAt, tmpVec, dt, { rate: FOLLOW_RATE, maxSpeed: LOOK_MAX_SPEED }));
