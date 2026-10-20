@@ -2,10 +2,19 @@
  * Экран «Рекорды»:
  *   «Общие» — общая таблица: у каждого ника одна строка, его лучший результат;
  *   «Мои»   — все свои попытки на этом устройстве, новые сверху, лучшая отмечена звездой.
+ * Режим и скорость (Медленно / Нормально / Быстро) — вкладки; у каждой скорости своя таблица.
+ * У ника в общей таблице — значок, чем он играл: ПК, свайпы или кнопки.
  */
-import { loadHistory, personalBest } from '../storage.js';
+import { attemptSpeed, loadHistory, personalBest } from '../storage.js';
 import { $, markActive } from './dom.js';
 import { iconSvg } from './icons.js';
+
+/** Значок платформы у ника: чем играли в партии с этим рекордом. */
+const PLATFORM_ICONS = Object.freeze({
+  pc: { icon: 'monitor', label: 'Компьютер' },
+  touch: { icon: 'phoneSwipe', label: 'Телефон, свайпы' },
+  buttons: { icon: 'dpad', label: 'Телефон, кнопки на экране' },
+});
 
 /**
  * @param {object} deps
@@ -15,6 +24,7 @@ import { iconSvg } from './icons.js';
 export function createRecordsScreen({ settings, leaderboard }) {
   let scope = leaderboard.enabled ? 'global' : 'local';
   let mode = settings.mode;
+  let speed = 'normal';
   let request = 0;
 
   function message(text, className = 'empty') {
@@ -42,6 +52,17 @@ export function createRecordsScreen({ settings, leaderboard }) {
       const li = document.createElement('li');
       const name = document.createElement('span');
       name.textContent = r.name;
+      const platform = PLATFORM_ICONS[r.platform];
+      if (platform) {
+        const icon = iconSvg(platform.icon, 'icon platform-icon');
+        icon.setAttribute('aria-hidden', 'false');
+        icon.setAttribute('role', 'img');
+        icon.setAttribute('aria-label', platform.label);
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = platform.label;
+        icon.prepend(title);
+        name.prepend(icon);
+      }
       if (settings.playerName && r.name.toLowerCase() === settings.playerName.toLowerCase()) li.classList.add('me');
       const score = document.createElement('b');
       score.textContent = r.score;
@@ -64,10 +85,10 @@ export function createRecordsScreen({ settings, leaderboard }) {
     ol.classList.add('history');
     ol.replaceChildren();
     if (!list.length) {
-      message('Здесь будут все ваши попытки в этом режиме.');
+      message('Здесь будут все ваши попытки в этом режиме на этой скорости.');
       return;
     }
-    const best = personalBest(mode);
+    const best = personalBest(mode, speed);
     let bestMarked = false;
     for (const a of list) {
       const li = document.createElement('li');
@@ -101,18 +122,19 @@ export function createRecordsScreen({ settings, leaderboard }) {
   async function render(nextMode = mode) {
     mode = nextMode;
     markActive($('#records-tabs'), 'mode', mode);
+    markActive($('#records-speed'), 'speed', speed);
     markActive($('#records-scope'), 'scope', scope);
     showPlace(null);
     if (scope === 'local') {
-      historyRows(loadHistory()[mode] ?? []);
+      historyRows((loadHistory()[mode] ?? []).filter((a) => attemptSpeed(a) === speed));
       return;
     }
     const id = ++request;
     message('Загружаем…', 'loading');
     try {
       const [list, place] = await Promise.all([
-        leaderboard.top(mode),
-        settings.playerName ? leaderboard.place(mode, settings.playerName).catch(() => null) : null,
+        leaderboard.top(mode, speed),
+        settings.playerName ? leaderboard.place(mode, settings.playerName, speed).catch(() => null) : null,
       ]);
       if (id !== request) return;
       globalRows(list);
@@ -125,6 +147,13 @@ export function createRecordsScreen({ settings, leaderboard }) {
   $('#records-tabs').addEventListener('click', (e) => {
     const m = e.target.closest('button')?.dataset.mode;
     if (m) render(m);
+  });
+
+  $('#records-speed').addEventListener('click', (e) => {
+    const s = e.target.closest('button')?.dataset.speed;
+    if (!s) return;
+    speed = s;
+    render();
   });
 
   $('#records-scope').addEventListener('click', (e) => {

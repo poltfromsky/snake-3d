@@ -315,6 +315,12 @@
         <button data-mode="walls">Стены</button>
         <button data-mode="timed">На время</button>
       </div>
+      <!-- На медленной скорости легче набрать очки — у каждой скорости своя таблица. -->
+      <div class="segmented compact" id="records-speed" aria-label="Скорость">
+        <button data-speed="slow">Медленно</button>
+        <button data-speed="normal">Нормально</button>
+        <button data-speed="fast">Быстро</button>
+      </div>
       <ol id="records-list" class="records"></ol>
       <p id="records-me" class="records-me hidden" aria-live="polite"></p>
       <button class="btn" data-action="back">Назад</button>
@@ -342,6 +348,50 @@
         <p id="feedback-status" class="status" aria-live="polite"></p>
       </form>
       <button class="btn" data-action="back">Назад</button>
+    </div>
+  </section>
+
+  <!-- Профиль: защитить ник паролем, войти с другого устройства, восстановить доступ -->
+  <section id="screen-profile" class="screen hidden">
+    <div class="panel">
+      <h2>Профиль</h2>
+      <p class="subtitle" id="profile-state"></p>
+
+      <form id="profile-create" class="stack">
+        <p class="hint">Пароль защитит ник: с ним можно заходить под своим ником с телефона и компьютера. Придумайте пароль только для этой игры — не тот, что у вас на почте или в соцсетях.</p>
+        <input id="profile-new-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль (от 8 символов)" aria-label="Пароль">
+        <input id="profile-new-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль ещё раз" aria-label="Пароль ещё раз">
+        <button class="btn primary" type="submit">Создать профиль</button>
+      </form>
+
+      <form id="profile-login" class="stack">
+        <p class="hint">Ник уже защищён паролем на другом устройстве? Войдите:</p>
+        <input id="profile-login-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
+        <input id="profile-login-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Пароль" aria-label="Пароль">
+        <button class="btn" type="submit">Войти</button>
+        <button type="button" class="text-btn" id="profile-forgot">Забыли пароль?</button>
+      </form>
+
+      <form id="profile-recover" class="stack hidden">
+        <p class="hint">Введите ник и код восстановления, который показали при создании профиля, и задайте новый пароль.</p>
+        <input id="profile-recover-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
+        <input id="profile-recover-code" maxlength="30" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Код восстановления: XXXXX-XXXXX-XXXXX-XXXXX" aria-label="Код восстановления">
+        <input id="profile-recover-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль (от 8 символов)" aria-label="Новый пароль">
+        <input id="profile-recover-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль ещё раз" aria-label="Новый пароль ещё раз">
+        <button class="btn primary" type="submit">Задать новый пароль</button>
+        <button type="button" class="text-btn" id="profile-recover-cancel">Назад ко входу</button>
+      </form>
+
+      <div id="profile-code" class="stack hidden" role="alert">
+        <p class="hint"><b>Код восстановления.</b> Он понадобится, если забудете пароль. Показывается один раз — сохраните его (скриншот, заметки).</p>
+        <p class="recovery-code" id="profile-code-text"></p>
+        <button type="button" class="btn" id="profile-code-copy">Скопировать код</button>
+        <label class="check"><input type="checkbox" id="profile-code-saved"> Я сохранил код</label>
+        <button type="button" class="btn primary" id="profile-code-done" disabled>Готово</button>
+      </div>
+
+      <p id="profile-status" class="status" aria-live="polite"></p>
+      <button class="btn" data-action="profile-back">Назад</button>
     </div>
   </section>
 
@@ -379,6 +429,10 @@
           <button data-value="off">По кнопке</button>
           <button data-value="on">Автоматически</button>
         </div>
+      </div>
+      <div class="field online-only hidden">Профиль — вход с другого устройства
+        <p class="hint" id="settings-profile-state"></p>
+        <button class="btn" data-action="profile">Профиль и вход</button>
       </div>
       <div class="field">Версия игры <b id="settings-version"></b>
         <button class="btn" data-action="whats-new">История обновлений</button>

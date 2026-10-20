@@ -15,6 +15,20 @@ export const LIMITS = Object.freeze({
 
 export const RECORD_MODES = Object.freeze(['classic', 'walls', 'timed']);
 
+/**
+ * Скорость партии: у каждой своя вкладка общей таблицы — на медленной легче набрать очки,
+ * и смешивать результаты нечестно. Порядок — от медленной к быстрой.
+ */
+export const RECORD_SPEEDS = Object.freeze(['slow', 'normal', 'fast']);
+
+/** Чем играли: клавиатура, свайпы по экрану или кнопки-стрелки на экране. */
+export const PLATFORMS = Object.freeze(['pc', 'touch', 'buttons']);
+
+/** Более медленная из двух скоростей: если скорость меняли посреди партии, рекорд идёт в медленную. */
+export function slowerSpeed(a, b) {
+  return RECORD_SPEEDS.indexOf(a) <= RECORD_SPEEDS.indexOf(b) ? a : b;
+}
+
 /** Убирает управляющие символы и лишние пробелы, обрезает до лимита. */
 export function cleanText(value, max) {
   return String(value ?? '')
@@ -33,14 +47,28 @@ export function nameKey(name) {
   return cleanText(name, LIMITS.name).toLowerCase();
 }
 
-/** Готовит рекорд к сохранению или возвращает null, если он некорректен. */
-export function buildRecord({ name, mode, score, length, comment } = {}) {
+/**
+ * Готовит рекорд к сохранению или возвращает null, если он некорректен.
+ * Без скорости — «normal»: так присылают рекорды из очереди прошлых версий игры.
+ * Неизвестная платформа не мешает рекорду — просто без значка.
+ */
+export function buildRecord({
+  name, mode, speed = 'normal', platform = null, score, length, comment,
+} = {}) {
   const cleanName = cleanText(name, LIMITS.name);
-  if (!cleanName || !RECORD_MODES.includes(mode)) return null;
+  if (!cleanName || !RECORD_MODES.includes(mode) || !RECORD_SPEEDS.includes(speed)) return null;
   if (!Number.isInteger(score) || score < 1 || score > LIMITS.maxScore) return null;
   if (!Number.isInteger(length) || length < 1 || length > LIMITS.maxLength) return null;
   const cleanComment = cleanText(comment, LIMITS.recordComment);
-  return { name: cleanName, mode, score, length, comment: cleanComment || null };
+  return {
+    name: cleanName,
+    mode,
+    speed,
+    platform: PLATFORMS.includes(platform) ? platform : null,
+    score,
+    length,
+    comment: cleanComment || null,
+  };
 }
 
 /** Готовит отзыв к сохранению или возвращает null, если текста нет. */

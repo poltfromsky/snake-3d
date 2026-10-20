@@ -191,12 +191,15 @@ test('браузер без 3D видит объяснение, а не мёрт
 async function uniqueSenderForRecords(page) {
   let n = 0;
   const base = `10.${Date.now() % 250}.${Math.floor(Math.random() * 250)}`;
-  await page.route('**/api/records', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue();
-    n += 1;
-    const response = await route.fetch({ headers: { ...route.request().headers(), 'cf-connecting-ip': `${base}.${n}` } });
-    return route.fulfill({ response });
-  });
+  // Отправка рекордов и действия с профилем — те же ограничения по адресу.
+  for (const pattern of ['**/api/records', '**/api/account/*']) {
+    await page.route(pattern, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      n += 1;
+      const response = await route.fetch({ headers: { ...route.request().headers(), 'cf-connecting-ip': `${base}.${n}` } });
+      return route.fulfill({ response });
+    });
+  }
 }
 
 /**
@@ -300,11 +303,133 @@ test.describe('защита общей таблицы', () => {
       const errors = await openGame(stranger, { playerName: nick, autoSubmit: 'on' });
       await uniqueSenderForRecords(stranger);
       await playSolo(stranger, 30);
-      await expect(stranger.locator('#record-auto-status')).toHaveText(`Ник «${nick}» уже занят другим игроком. Выберите другой в настройках.`);
+      await expect(stranger.locator('#record-auto-status')).toHaveText(`Ник «${nick}» уже занят другим игроком. Если это ваш ник — войдите в профиль в настройках.`);
       expect(errors).toEqual([]);
     } finally {
       await ownerContext.close();
       await strangerContext.close();
     }
+  });
+});
+
+test.describe('рекорды по скоростям', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('вкладки скорости: «Мои» и общая таблица отдельно для каждой скорости, у ника значок платформы', async ({ page }) => {
+    // Своя история на устройстве: попытки на разных скоростях.
+    await page.addInitScript(() => {
+      if (localStorage.getItem('snake3d.history.v1')) return;
+      localStorage.setItem('snake3d.history.v1', JSON.stringify({
+        walls: [
+          { score: 70, length: 9, date: 3, speed: 'slow' },
+          { score: 40, length: 7, date: 2, speed: 'normal' },
+          { score: 30, length: 6, date: 1 }, // из прошлой версии — без скорости, считается «normal»
+        ],
+      }));
+    });
+    // Общая таблица: ответ сервера подставляем, проверяем только то, как экран его показывает.
+    const asked = [];
+    await page.route('**/api/records?*', (route) => {
+      const url = new URL(route.request().url());
+      asked.push(url.searchParams.get('speed'));
+      const rows = url.searchParams.get('speed') === 'fast'
+        ? [{ name: 'Кобра', score: 90, length: 11, comment: null, platform: 'buttons', created_at: '2026-10-19 10:00:00' },
+          { name: 'Удав', score: 80, length: 10, comment: null, platform: 'pc', created_at: '2026-10-19 10:00:00' },
+          { name: 'Полоз', score: 70, length: 9, comment: null, platform: null, created_at: '2026-10-19 10:00:00' }]
+        : [];
+      return route.fulfill({ json: rows, headers: { 'Access-Control-Allow-Origin': '*' } });
+    });
+    const errors = await openGame(page);
+    await page.locator('#screen-menu [data-action="records"]').click();
+    await page.locator('#records-tabs [data-mode="walls"]').click();
+    await expect(page.locator('#records-speed [data-speed="normal"]')).toHaveClass(/active/);
+
+    // «Мои»: на нормальной — две попытки (с явной скоростью и из прошлой версии), на медленной — одна.
+    await page.locator('#records-scope [data-scope="local"]').click();
+    await expect(page.locator('#records-list li')).toHaveCount(2);
+    await expect(page.locator('#records-list li.best b')).toHaveText('40');
+    await page.locator('#records-speed [data-speed="slow"]').click();
+    await expect(page.locator('#records-list li')).toHaveCount(1);
+    await expect(page.locator('#records-list li.best b')).toHaveText('70');
+
+    // Общая таблица на быстрой: значки платформы с подписью, у строки без платформы значка нет.
+    await page.locator('#records-scope [data-scope="global"]').click();
+    await page.locator('#records-speed [data-speed="fast"]').click();
+    await expect(page.locator('#records-list li')).toHaveCount(3);
+    await expect(page.locator('#records-list li').nth(0).locator('.platform-icon')).toHaveAttribute('aria-label', 'Телефон, кнопки на экране');
+    await expect(page.locator('#records-list li').nth(1).locator('.platform-icon')).toHaveAttribute('aria-label', 'Компьютер');
+    await expect(page.locator('#records-list li').nth(2).locator('.platform-icon')).toHaveCount(0);
+    expect(asked).toContain('fast');
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe('профиль с паролем', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  const openProfile = async (page) => {
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#screen-settings [data-action="profile"]').click();
+    await expect(page.locator('#screen-profile')).toBeVisible();
+  };
+
+  test('пароль защищает ник: профиль создаётся, код показывается один раз, с другого устройства можно войти', async ({ page, browser }, testInfo) => {
+    const nick = `Проф${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const password = 'пароль-для-теста-1';
+    const errors = await openGame(page, { playerName: nick });
+    await uniqueSenderForRecords(page);
+    await openProfile(page);
+
+    // Создание: пароли должны совпадать и быть не короче 8 знаков.
+    await page.locator('#profile-new-pass').fill(password);
+    await page.locator('#profile-new-pass2').fill('другой-пароль-2');
+    await page.locator('#profile-create button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toHaveText('Пароли не совпадают.');
+    await page.locator('#profile-new-pass').fill('коротко');
+    await page.locator('#profile-new-pass2').fill('коротко');
+    await page.locator('#profile-create button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toContainText('не короче 8');
+    await page.locator('#profile-new-pass').fill(password);
+    await page.locator('#profile-new-pass2').fill(password);
+    await page.locator('#profile-create button[type=submit]').click();
+
+    // Код восстановления: показан, уйти не сохранив нельзя, «Готово» — только после отметки.
+    await expect(page.locator('#profile-code')).toBeVisible({ timeout: 20_000 });
+    const code = (await page.locator('#profile-code-text').textContent()).trim();
+    expect(code).toMatch(/^[A-Z2-9]{5}(-[A-Z2-9]{5}){3}$/);
+    await expect(page.locator('#profile-code-done')).toBeDisabled();
+    await page.locator('#screen-profile [data-action="profile-back"]').click();
+    await expect(page.locator('#screen-profile')).toBeVisible();
+    await expect(page.locator('#profile-state')).toContainText('сохраните код');
+    await page.locator('#profile-code-saved').check();
+    await page.locator('#profile-code-done').click();
+    await expect(page.locator('#profile-state')).toContainText('защищён паролем');
+    await expect(page.locator('#profile-code')).toBeHidden();
+    await page.locator('#screen-profile [data-action="profile-back"]').click();
+    await expect(page.locator('#settings-profile-state')).toHaveText('Ник защищён паролем.');
+
+    // Другое устройство: чистое хранилище. Неверный пароль — отказ, верный — вход под тем же ником.
+    const other = await browser.newContext();
+    try {
+      const phone = await other.newPage();
+      const phoneErrors = await openGame(phone, { playerName: '' });
+      await uniqueSenderForRecords(phone);
+      await openProfile(phone);
+      await expect(phone.locator('#profile-create')).toBeHidden();
+      await phone.locator('#profile-login-name').fill(nick);
+      await phone.locator('#profile-login-pass').fill('не-тот-пароль-9');
+      await phone.locator('#profile-login button[type=submit]').click();
+      await expect(phone.locator('#profile-status')).toHaveText('Неверный ник или пароль.', { timeout: 20_000 });
+      await phone.locator('#profile-login-pass').fill(password);
+      await phone.locator('#profile-login button[type=submit]').click();
+      await expect(phone.locator('#profile-status')).toContainText(`Вы вошли как «${nick}»`, { timeout: 20_000 });
+      await expect(phone.locator('#profile-state')).toContainText('защищён паролем');
+      await phone.locator('#screen-profile [data-action="profile-back"]').click();
+      await expect(phone.locator('#set-name')).toHaveValue(nick);
+      expect(phoneErrors).toEqual([]);
+    } finally {
+      await other.close();
+    }
+    expect(errors).toEqual([]);
   });
 });

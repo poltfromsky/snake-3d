@@ -3,21 +3,24 @@
  *
  *   POST /api/rooms                 — создать комнату {mode, speed} → {code}
  *   GET  /api/rooms/:code/ws        — WebSocket игрока (Durable Object Room)
- *   GET  /api/records?mode=classic  — топ-10 общей таблицы (по строке на ник)
- *   GET  /api/records/place?mode=classic&name=… — место и лучший результат ника {place, score, length} или null
+ *   GET  /api/records?mode=classic&speed=normal — топ-10 общей таблицы (по строке на ник)
+ *   GET  /api/records/place?mode=classic&speed=normal&name=… — место и лучший результат ника {place, score, length} или null
+ *                                     (speed — slow | normal | fast; без него — normal)
  *   POST /api/runs                  — билет партии {mode} → {ticket}: выдаётся при старте
  *                                     одиночной игры, по нему можно отправить один результат
- *   POST /api/records               — рекорд игрока {name, mode, score, length, comment, ticket, device}:
- *                                     в таблице одна строка на ник, обновляется, только если
+ *   POST /api/records               — рекорд игрока {name, mode, speed, platform, score, length, comment, ticket, device}:
+ *                                     в таблице одна строка на ник и скорость, обновляется, только если
  *                                     результат лучше; ник принадлежит устройству (device),
  *                                     счёт проверяется на правдоподобие по времени партии
+ *   POST /api/account/create|login|recover — профиль с паролем и кодом восстановления (server/src/account.js)
  *   POST /api/feedback              — оставить отзыв (читает только владелец, в D1)
  *   GET  /api/health                — проверка, что сервер жив
  */
 import {
-  buildFeedback, buildRecord, nameKey, RECORD_MODES,
+  buildFeedback, buildRecord, nameKey, RECORD_MODES, RECORD_SPEEDS,
 } from '../../src/core/validate.js';
 import { checkRun, RUN_TTL_MS } from '../../src/core/fair-play.js';
+import { createAccountHandlers } from './account.js';
 
 export { Room } from './room.js';
 
@@ -106,22 +109,26 @@ async function createRoom(request, env) {
   return json({ error: 'Не удалось создать комнату, попробуйте ещё раз.' }, 503, request, env);
 }
 
+/** Скорость из адреса запроса; без неё — «normal» (так спрашивают прошлые версии игры). */
+const speedParam = (url) => url.searchParams.get('speed') ?? 'normal';
+
 async function topRecords(request, env, url) {
   const mode = url.searchParams.get('mode');
-  if (!RECORD_MODES.includes(mode)) return json({ error: 'unknown mode' }, 400, request, env);
+  const speed = speedParam(url);
+  if (!RECORD_MODES.includes(mode) || !RECORD_SPEEDS.includes(speed)) return json({ error: 'unknown mode' }, 400, request, env);
   // По одной строке на ник — его лучший результат (при равенстве — самый ранний).
   // Старые записи до миграции 0002 могли повторять ник — они отсеиваются здесь же.
   const { results } = await env.DB
-    .prepare(`SELECT name, score, length, comment, created_at FROM (
-                SELECT name, score, length, comment, created_at,
+    .prepare(`SELECT name, score, length, comment, platform, created_at FROM (
+                SELECT name, score, length, comment, platform, created_at,
                        ROW_NUMBER() OVER (
                          PARTITION BY COALESCE(name_key, lower(trim(name)))
                          ORDER BY score DESC, created_at ASC
                        ) AS place
-                FROM records WHERE mode = ?
+                FROM records WHERE mode = ? AND speed = ?
               ) WHERE place = 1
               ORDER BY score DESC, created_at ASC LIMIT 10`)
-    .bind(mode)
+    .bind(mode, speed)
     .all();
   return json(results, 200, request, env);
 }
@@ -129,8 +136,11 @@ async function topRecords(request, env, url) {
 /** Место ника в общей таблице: игрок видит себя, даже если он не в топ-10. */
 async function placeOf(request, env, url) {
   const mode = url.searchParams.get('mode');
+  const speed = speedParam(url);
   const key = nameKey(url.searchParams.get('name'));
-  if (!RECORD_MODES.includes(mode) || !key) return json({ error: 'unknown mode or name' }, 400, request, env);
+  if (!RECORD_MODES.includes(mode) || !RECORD_SPEEDS.includes(speed) || !key) {
+    return json({ error: 'unknown mode or name' }, 400, request, env);
+  }
   const row = await env.DB
     .prepare(`WITH best AS (
                 SELECT COALESCE(name_key, lower(trim(name))) AS k, score, length, created_at,
@@ -138,12 +148,12 @@ async function placeOf(request, env, url) {
                          PARTITION BY COALESCE(name_key, lower(trim(name)))
                          ORDER BY score DESC, created_at ASC
                        ) AS n
-                FROM records WHERE mode = ?
+                FROM records WHERE mode = ? AND speed = ?
               ), ranked AS (
                 SELECT k, score, length, RANK() OVER (ORDER BY score DESC) AS place FROM best WHERE n = 1
               )
               SELECT place, score, length FROM ranked WHERE k = ?`)
-    .bind(mode, key)
+    .bind(mode, speed, key)
     .first();
   return json(row ?? null, 200, request, env);
 }
@@ -184,8 +194,14 @@ async function startRun(request, env) {
 async function claimNick(env, key, name, ownerHash, clientHashValue) {
   const owner = await env.DB.prepare('SELECT owner_hash FROM nicks WHERE name_key = ?').bind(key).first();
   if (owner) {
-    return owner.owner_hash === ownerHash ? null : {
-      code: 'nick_taken', status: 403, error: `Ник «${name}» уже занят другим игроком. Выберите другой в настройках.`,
+    if (owner.owner_hash === ownerHash) return null;
+    // Устройства, которые вошли в профиль этого ника по паролю.
+    const allowed = await env.DB
+      .prepare('SELECT 1 AS x FROM nick_devices WHERE name_key = ? AND owner_hash = ?')
+      .bind(key, ownerHash)
+      .first();
+    return allowed ? null : {
+      code: 'nick_taken', status: 403, error: `Ник «${name}» уже занят другим игроком. Если это ваш ник — войдите в профиль в настройках.`,
     };
   }
   const day = "datetime('now', '-1 day')";
@@ -226,7 +242,7 @@ async function addRecord(request, env) {
     return refuse('bad_ticket', 'Партия не найдена или уже отправлена — в общую таблицу не принята.', 400, request, env);
   }
   // 2. Счёт правдоподобен для времени, прошедшего с начала партии.
-  if (!checkRun({ score: record.score, elapsedMs: now - run.issued_ms }).ok) {
+  if (!checkRun({ score: record.score, elapsedMs: now - run.issued_ms, speed: record.speed }).ok) {
     return refuse('implausible', 'Такой счёт невозможно набрать за это время — в общую таблицу не принят.', 400, request, env);
   }
   // 3. Ник принадлежит этому устройству (или свободен).
@@ -243,9 +259,9 @@ async function addRecord(request, env) {
   }
 
   const best = await env.DB
-    .prepare(`SELECT id, score FROM records WHERE mode = ? AND COALESCE(name_key, lower(trim(name))) = ?
+    .prepare(`SELECT id, score FROM records WHERE mode = ? AND speed = ? AND COALESCE(name_key, lower(trim(name))) = ?
               ORDER BY score DESC, created_at ASC LIMIT 1`)
-    .bind(record.mode, key)
+    .bind(record.mode, record.speed, key)
     .first();
   // Результат не лучше уже записанного — таблицу не трогаем, игроку сообщаем его лучший.
   if (best && record.score <= best.score) {
@@ -255,13 +271,14 @@ async function addRecord(request, env) {
     // Новый лучший результат ника: обновляем его строку. Комментарий — новый, а если его нет, старый.
     await env.DB
       .prepare(`UPDATE records SET name = ?, name_key = ?, score = ?, length = ?, comment = COALESCE(?, comment),
-                client_hash = ?, created_at = datetime('now') WHERE id = ?`)
-      .bind(record.name, key, record.score, record.length, record.comment, hash, best.id)
+                platform = ?, client_hash = ?, created_at = datetime('now') WHERE id = ?`)
+      .bind(record.name, key, record.score, record.length, record.comment, record.platform, hash, best.id)
       .run();
   } else {
     await env.DB
-      .prepare('INSERT INTO records (name, name_key, mode, score, length, comment, client_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(record.name, key, record.mode, record.score, record.length, record.comment, hash)
+      .prepare(`INSERT INTO records (name, name_key, mode, speed, platform, score, length, comment, client_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(record.name, key, record.mode, record.speed, record.platform, record.score, record.length, record.comment, hash)
       .run();
   }
   return json({ ok: true, improved: true, best: record.score }, best ? 200 : 201, request, env);
@@ -280,6 +297,10 @@ async function addFeedback(request, env) {
     .run();
   return json({ ok: true }, 201, request, env);
 }
+
+const account = createAccountHandlers({
+  json, readJson, clientHash, sha256, refuse, claimNick,
+});
 
 export default {
   async fetch(request, env) {
@@ -307,6 +328,9 @@ export default {
       if (url.pathname === '/api/records' && request.method === 'POST') return await addRecord(request, env);
       if (url.pathname === '/api/runs' && request.method === 'POST') return await startRun(request, env);
       if (url.pathname === '/api/feedback' && request.method === 'POST') return await addFeedback(request, env);
+      if (url.pathname === '/api/account/create' && request.method === 'POST') return await account.create(request, env);
+      if (url.pathname === '/api/account/login' && request.method === 'POST') return await account.login(request, env);
+      if (url.pathname === '/api/account/recover' && request.method === 'POST') return await account.recover(request, env);
     } catch (err) {
       // В лог — только текст ошибки, без запроса и заголовков (там IP игрока).
       console.error(err?.message ?? 'unknown error');

@@ -9,7 +9,9 @@ import { bindNameInput } from './nickname.js';
  * @param {import('../audio/audio.js').AudioManager} deps.audio
  * @param {{onSpeed(f: number): void, onTheme(): void, onCamera(v: string): void, onControls(v: string): void}} deps.hooks
  */
-export function createSettingsScreen({ settings, audio, hooks }) {
+export function createSettingsScreen({
+  settings, audio, hooks, profileSummary = () => '',
+}) {
   const nameField = bindNameInput($('#set-name'), settings);
 
   function render() {
@@ -21,6 +23,7 @@ export function createSettingsScreen({ settings, audio, hooks }) {
     markActive($('#set-camera'), 'value', settings.camera);
     markActive($('#set-controls'), 'value', settings.controls);
     markActive($('#set-autosubmit'), 'value', settings.autoSubmit);
+    $('#settings-profile-state').textContent = profileSummary();
   }
 
   function bindSegmented(id, key, onChange) {

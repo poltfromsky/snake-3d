@@ -19,6 +19,7 @@ import {
 } from './storage.js';
 import { TutorialMode } from './modes/tutorial-mode.js';
 import { SwipeTracker } from './ui/swipe.js';
+import { slowerSpeed } from './core/validate.js';
 import { setupDpad } from './ui/dpad.js';
 import { controlDevice } from './tutorial/steps.js';
 import { StateMachine, STATES } from './app/state-machine.js';
@@ -37,6 +38,7 @@ import {
   renderCredits, renderHud, showScreen, showTimer,
 } from './ui/screens.js';
 import { createSettingsScreen } from './ui/settings-screen.js';
+import { createProfileScreen } from './ui/profile-screen.js';
 import { isTouchDevice, WakeLock } from './ui/device.js';
 import { createFirstHints } from './ui/first-hints.js';
 import { createTutorialUI } from './ui/tutorial-ui.js';
@@ -95,6 +97,11 @@ let lastTime = performance.now();
 // Итог последней дуэли: ник соперника может прийти по сети позже конца партии
 // (медленный телефон, плохая связь) — тогда подписи перерисовываются.
 let lastDuel = null;
+/**
+ * Одиночная партия для общей таблицы: скорость (если меняли посреди партии — самая медленная)
+ * и сколько поворотов сделано клавиатурой, свайпами и кнопками — по ним значок у ника.
+ */
+let soloRun = null;
 
 /* ---------------- Режимы ---------------- */
 
@@ -178,8 +185,17 @@ function play(create, message) {
 
 const startSolo = () => play(() => {
   saver.startRun(settings.mode); // билет партии для общей таблицы
+  soloRun = { speed: settings.speed, inputs: { pc: 0, touch: 0, buttons: 0 } };
   return createSolo();
 });
+
+/** Чем играли в партии: чем сделано больше всего поворотов (без поворотов — чем обычно играют здесь). */
+function soloPlatform() {
+  const counts = Object.entries(soloRun?.inputs ?? {}).filter(([, n]) => n > 0);
+  if (counts.length) return counts.sort((a, b) => b[1] - a[1])[0][0];
+  if (!isTouchDevice()) return 'pc';
+  return settings.controls === 'buttons' ? 'buttons' : 'touch';
+}
 const startLocalDuel = () => play(() => new LocalDuelMode(fieldConfig()), 'WASD против стрелок!');
 
 function startBotDuel(level) {
@@ -227,7 +243,13 @@ function soloOver(reason) {
   $('#over-title').textContent = text.title;
   $('#over-reason').textContent = text.reason;
   $('#over-score').textContent = game.score;
-  const { needsForm, isBest } = saver.finish({ mode: settings.mode, score: game.score, length: game.length });
+  const { needsForm, isBest } = saver.finish({
+    mode: settings.mode,
+    speed: soloRun?.speed ?? settings.speed,
+    platform: soloPlatform(),
+    score: game.score,
+    length: game.length,
+  });
   if (isBest) setTimeout(() => audio.play('record'), 700);
   // На телефоне не ставим курсор в поле ника: выскочившая клавиатура закрыла бы итоги.
   showLater('over', () => { if (needsForm && !isTouchDevice()) $('#record-name').focus(); });
@@ -470,6 +492,12 @@ const saver = createResultSaver({
   },
 });
 const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, settings });
+const profileScreen = createProfileScreen({
+  settings,
+  leaderboard,
+  // Вошли в профиль или создали его: ник мог смениться — обновим поле ника и подписи.
+  onChange: () => settingsScreen.render(),
+});
 const tutorialUI = createTutorialUI({
   onNext: () => { if (mode.kind === 'tutorial') mode.next(); },
   onSkip: () => toMenu(),
@@ -480,8 +508,13 @@ const firstHints = createFirstHints({ seen: tutorial.hints, save: () => saveTuto
 const settingsScreen = createSettingsScreen({
   settings,
   audio,
+  profileSummary: () => profileScreen.summary(),
   hooks: {
-    onSpeed: (factor) => mode.setSpeedFactor(factor),
+    onSpeed: (factor) => {
+      mode.setSpeedFactor(factor);
+      // Скорость сменили посреди партии — в общей таблице она будет на самой медленной из двух.
+      if (soloRun && mode.kind === 'solo') soloRun.speed = slowerSpeed(soloRun.speed, settings.speed);
+    },
     // Тема меняется только в меню, чтобы не сбрасывать текущую партию.
     onTheme: () => { if (app.is(MENU)) setupScene(); },
     onCamera: (value) => { renderer.cameraMode = value; },
@@ -507,8 +540,11 @@ $('#mode-select').addEventListener('click', (e) => {
 /* ---------------- Управление ---------------- */
 
 /** dir — направление на экране; если поле повёрнуто под экран телефона, сцена переводит его в направление на поле. */
-function steer(device, dir) {
-  if (app.is(PLAYING)) mode.steer(device, renderer.toFieldDirection(dir));
+/** input — чем повернули (для значка у ника в общей таблице): клавиатура, свайп или кнопки. */
+function steer(device, dir, input = device === 'touch' ? 'touch' : 'pc') {
+  if (!app.is(PLAYING)) return;
+  mode.steer(device, renderer.toFieldDirection(dir));
+  if (soloRun && mode.kind === 'solo') soloRun.inputs[input] += 1;
 }
 
 const isTyping = (target) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
@@ -567,7 +603,7 @@ function updateDpad() {
 }
 const dpadControl = setupDpad($('#dpad'), (dir) => {
   audio.unlock();
-  steer('touch', dir);
+  steer('touch', dir, 'buttons');
 });
 
 // Повернули телефон в меню — поле на фоне тоже разворачивается (вертикальное ↔ горизонтальное).
@@ -623,6 +659,19 @@ const ACTIONS = {
   },
   settings: () => {
     backTo = app.is(PAUSED) ? 'pause' : 'menu';
+    settingsScreen.render();
+    show('settings');
+  },
+  profile: () => {
+    profileScreen.render();
+    show('profile');
+  },
+  'profile-back': () => {
+    // Пока показан код восстановления, уходить нельзя: он больше не покажется.
+    if (profileScreen.showingCode) {
+      $('#profile-state').textContent = 'Сначала сохраните код восстановления и отметьте это.';
+      return;
+    }
     settingsScreen.render();
     show('settings');
   },

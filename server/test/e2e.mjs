@@ -3,6 +3,8 @@
 // Адрес можно переопределить: API=https://… npm run test:e2e
 import assert from 'node:assert/strict';
 
+import { deriveLoginKey, isRecoveryCode } from '../../src/core/auth.js';
+
 const B = (process.env.API ?? 'http://127.0.0.1:8787').replace(/\/+$/, '');
 const WS = B.replace(/^http/, 'ws');
 
@@ -111,6 +113,30 @@ assert.equal(reply.status, 403);
 assert.equal(reply.data.code, 'nick_taken');
 console.log('✔ чужое устройство не может писать под занятым ником');
 
+// Скорость и платформа: у ника своя строка на каждой скорости, значок платформы приходит с рекордом.
+const speedRows = async (speed) => (await (await fetch(`${B}/api/records?mode=timed&speed=${speed}`)).json())
+  .filter((row) => row.name.toLowerCase() === nick);
+let t2 = await ticket();
+await pause(1500); // на медленной скорости проверка правдоподобия строже — ждём чуть дольше
+reply = await post('records', {
+  name: nick, mode: 'timed', speed: 'slow', platform: 'touch', score: 20, length: 5, ticket: t2, device: deviceA,
+});
+assert.equal(reply.status, 201, `новая строка на медленной скорости: ${JSON.stringify(reply.data)}`);
+const slow = await speedRows('slow');
+assert.equal(slow.length, 1);
+assert.equal(slow[0].score, 20, 'на медленной — свой рекорд, хотя на нормальной у ника больше');
+assert.equal(slow[0].platform, 'touch');
+assert.equal((await speedRows('normal'))[0].score, 55, 'нормальная не тронута');
+const slowPlace = await (await fetch(`${B}/api/records/place?mode=timed&speed=slow&name=${encodeURIComponent(nick)}`)).json();
+assert.equal(slowPlace.score, 20);
+assert.equal((await fetch(`${B}/api/records?mode=timed&speed=turbo`)).status, 400, 'неизвестная скорость');
+t2 = await ticket();
+reply = await post('records', {
+  name: nick, mode: 'timed', speed: 'slow', score: 300, length: 5, ticket: t2, device: deviceA,
+});
+assert.equal(reply.data.code, 'implausible', '300 очков на медленной сразу после старта');
+console.log('✔ скорость: своя строка на каждой скорости, медленная проверяется строже; платформа сохраняется');
+
 const used = await ticket();
 await pause(600);
 assert.equal((await post('records', { name: nick, mode: 'timed', score: 60, length: 5, ticket: used, device: deviceA })).status, 200);
@@ -123,6 +149,70 @@ assert.equal(reply.data.code, 'implausible', '4000 очков сразу пос�
 reply = await post('records', { name: nick, mode: 'walls', score: 10, length: 5, ticket: await ticket('timed'), device: deviceA });
 assert.equal(reply.data.code, 'bad_ticket', 'билет другого режима');
 console.log('✔ без билета, повторно по билету, «накрутка» и чужой режим — не принимаются');
+
+// Профиль с паролем: ник можно защитить, войти с другого устройства, подбор пароля ограничен,
+// забытый пароль заменяется кодом восстановления.
+const ITER = 1000; // в тестах ключ считается быстро: проверяем сервер, а не стойкость растягивания
+const profileNick = `pr${Date.now().toString(36).slice(-6)}`;
+const keyOf = (password, name = profileNick) => deriveLoginKey(password, name, ITER);
+const deviceC = 'd'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
+const key1 = await keyOf('первый пароль 1');
+
+reply = await post('account/create', { name: profileNick, device: deviceA, key: key1 });
+assert.equal(reply.status, 201, JSON.stringify(reply.data));
+assert.ok(isRecoveryCode(reply.data.recoveryCode), 'в ответе код восстановления');
+const code1 = reply.data.recoveryCode;
+assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: key1 })).data.code, 'account_exists');
+assert.equal((await post('account/create', { name: profileNick, device: deviceB, key: key1 })).data.code, 'nick_taken',
+  'создать профиль чужого ника нельзя');
+assert.equal((await post('account/create', { name: profileNick, device: 'не ключ', key: key1 })).status, 400);
+assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: 'x' })).status, 400);
+console.log('✔ профиль: создаётся один раз, только владельцем ника, в ответе код восстановления');
+
+const foreignTicket = await ticket();
+await pause(600);
+reply = await post('records', { name: profileNick, mode: 'timed', score: 10, length: 5, ticket: foreignTicket, device: deviceB });
+assert.equal(reply.data.code, 'nick_taken', 'без входа чужое устройство не пишет под ником');
+reply = await post('account/login', { name: profileNick, device: deviceB, key: await keyOf('не тот пароль 9') });
+assert.equal(reply.status, 401);
+assert.equal(reply.data.code, 'bad_login');
+const unknown = await post('account/login', { name: `нет${profileNick}`, device: deviceB, key: await keyOf('не тот пароль 9', `нет${profileNick}`) });
+assert.equal(unknown.status, 401);
+assert.equal(unknown.data.error, reply.data.error, 'ответ не выдаёт, есть ли такой ник');
+reply = await post('account/login', { name: profileNick.toUpperCase(), device: deviceB, key: key1 });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+const loggedTicket = await ticket();
+await pause(600);
+reply = await post('records', { name: profileNick, mode: 'timed', score: 10, length: 5, ticket: loggedTicket, device: deviceB });
+assert.equal(reply.status, 201, JSON.stringify(reply.data));
+console.log('✔ вход: неверный пароль и неизвестный ник — одинаковый отказ; верный пароль даёт нику второе устройство');
+
+// Подбор: после 5 неудачных попыток на ник даже верный пароль на время не принимается.
+const lockNick = `lk${Date.now().toString(36).slice(-6)}`;
+const lockKey = await keyOf('замок пароль 1', lockNick);
+assert.equal((await post('account/create', { name: lockNick, device: deviceA, key: lockKey })).status, 201);
+for (let i = 0; i < 5; i += 1) {
+  assert.equal((await post('account/login', { name: lockNick, device: deviceC, key: await keyOf(`мимо пароль ${i}`, lockNick) })).status, 401);
+}
+reply = await post('account/login', { name: lockNick, device: deviceC, key: lockKey });
+assert.equal(reply.status, 429);
+assert.equal(reply.data.code, 'auth_limit');
+console.log('✔ после пяти неудачных попыток вход на время закрыт, даже с верным паролем');
+
+// Забыли пароль: код восстановления даёт новый пароль и новый код; старые пароль и код больше не действуют.
+const key2 = await keyOf('второй пароль 2');
+reply = await post('account/recover', { name: profileNick, device: deviceC, code: 'AAAAA-AAAAA-AAAAA-AAAAA', key: key2 });
+assert.equal(reply.data.code, 'bad_code');
+assert.equal((await post('account/recover', { name: profileNick, device: deviceC, code: 'коротко', key: key2 })).status, 400);
+reply = await post('account/recover', { name: profileNick, device: deviceC, code: code1.toLowerCase().replace(/-/g, ' '), key: key2 });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+const code2 = reply.data.recoveryCode;
+assert.ok(isRecoveryCode(code2));
+assert.notEqual(code2, code1, 'код восстановления сменился');
+assert.equal((await post('account/login', { name: profileNick, device: deviceC, key: key1 })).data.code, 'bad_login', 'старый пароль не действует');
+assert.equal((await post('account/login', { name: profileNick, device: deviceC, key: key2 })).status, 200);
+assert.equal((await post('account/recover', { name: profileNick, device: deviceC, code: code1, key: key2 })).data.code, 'bad_code', 'старый код не действует');
+console.log('✔ восстановление: новый пароль и новый код, старые не действуют');
 
 const fresh = 'c'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
 for (let i = 1; i <= 3; i += 1) {

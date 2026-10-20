@@ -12,4 +12,4 @@ const isLocal = ['localhost', '127.0.0.1'].includes(globalThis.location?.hostnam
 
 export const API_BASE = isLocal ? 'http://localhost:8787' : PRODUCTION_API;
 
-export const APP_VERSION = '1.8.2';
+export const APP_VERSION = '1.9.0';

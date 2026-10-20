@@ -3,7 +3,9 @@
  * Проверки те же, что на сервере (src/core/validate.js): отсекаем ошибки
  * заранее, но окончательно решает сервер.
  */
-import { buildFeedback, buildRecord, RECORD_MODES } from '../core/validate.js';
+import {
+  buildFeedback, buildRecord, RECORD_MODES, RECORD_SPEEDS,
+} from '../core/validate.js';
 
 const TIMEOUT_MS = 8000;
 
@@ -41,10 +43,10 @@ export class Leaderboard {
     }
   }
 
-  /** Топ-10 по режиму: по одной строке на ник — его лучший результат. */
-  async top(mode) {
-    if (!RECORD_MODES.includes(mode)) return [];
-    return this.request(`records?mode=${encodeURIComponent(mode)}`);
+  /** Топ-10 по режиму и скорости: по одной строке на ник — его лучший результат. */
+  async top(mode, speed = 'normal') {
+    if (!RECORD_MODES.includes(mode) || !RECORD_SPEEDS.includes(speed)) return [];
+    return this.request(`records?mode=${encodeURIComponent(mode)}&speed=${encodeURIComponent(speed)}`);
   }
 
   /** Билет партии: берётся при старте одиночной игры, без него результат в таблицу не примут. */
@@ -55,9 +57,10 @@ export class Leaderboard {
   }
 
   /** Место ника в общей таблице: {place, score, length} или null, если он туда ещё не попадал. */
-  async place(mode, name) {
-    if (!RECORD_MODES.includes(mode) || !name) return null;
-    return this.request(`records/place?mode=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`);
+  async place(mode, name, speed = 'normal') {
+    if (!RECORD_MODES.includes(mode) || !RECORD_SPEEDS.includes(speed) || !name) return null;
+    const query = `mode=${encodeURIComponent(mode)}&speed=${encodeURIComponent(speed)}&name=${encodeURIComponent(name)}`;
+    return this.request(`records/place?${query}`);
   }
 
   /**
@@ -70,6 +73,25 @@ export class Leaderboard {
     const body = { ...record, ticket: entry.ticket, device: entry.device };
     const data = await this.request('records', { method: 'POST', body });
     return { improved: data.improved !== false, best: Number(data.best) || record.score };
+  }
+
+  /**
+   * Профиль с паролем (server/src/account.js). key — ключ входа из пароля (src/core/auth.js):
+   * сам пароль на сервер не уходит.
+   * @returns {Promise<{recoveryCode: string}>} код восстановления — показывается игроку один раз
+   */
+  async createProfile({ name, device, key }) {
+    return this.request('account/create', { method: 'POST', body: { name, device, key } });
+  }
+
+  /** Войти в профиль с этого устройства. */
+  async login({ name, device, key }) {
+    await this.request('account/login', { method: 'POST', body: { name, device, key } });
+  }
+
+  /** Забыли пароль: новый пароль по коду восстановления; в ответе новый код. */
+  async recover({ name, device, code, key }) {
+    return this.request('account/recover', { method: 'POST', body: { name, device, code, key } });
   }
 
   async submitFeedback(entry) {

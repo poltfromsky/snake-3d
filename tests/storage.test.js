@@ -65,3 +65,30 @@ test('неотправленные рекорды: по одному лучше�
   clearPending('classic', 70);
   assert.deepEqual(Object.keys(loadPending()), ['walls']);
 });
+
+test('личный рекорд считается отдельно для каждой скорости', () => {
+  assert.equal(addAttempt('classic', { score: 90, length: 10, speed: 'slow', date: 1 }), true);
+  assert.equal(addAttempt('classic', { score: 40, length: 7, speed: 'normal', date: 2 }), true,
+    'на нормальной свой рекорд, хотя на медленной больше');
+  assert.equal(addAttempt('classic', { score: 30, length: 6, date: 3 }), false, 'без скорости — нормальная');
+  assert.equal(personalBest('classic', 'slow'), 90);
+  assert.equal(personalBest('classic'), 40);
+  assert.equal(personalBest('classic', 'fast'), 0);
+});
+
+test('при переполнении истории лучшая попытка каждой скорости сохраняется', () => {
+  addAttempt('walls', { score: 500, length: 30, speed: 'slow', date: 0 });
+  addAttempt('walls', { score: 300, length: 20, speed: 'fast', date: 0 });
+  for (let i = 1; i <= 150; i += 1) addAttempt('walls', { score: 5, length: 3, date: i });
+  assert.equal(loadHistory().walls.length, 100);
+  assert.equal(personalBest('walls', 'slow'), 500);
+  assert.equal(personalBest('walls', 'fast'), 300);
+});
+
+test('очередь неотправленных: отдельно для каждой скорости', () => {
+  savePending({ name: 'Питон', mode: 'classic', score: 40, length: 6 });
+  savePending({ name: 'Питон', mode: 'classic', speed: 'fast', score: 25, length: 5 });
+  assert.equal(Object.keys(loadPending()).length, 2);
+  clearPending('classic', 25, 'fast');
+  assert.deepEqual(Object.keys(loadPending()), ['classic'], 'нормальную не тронули');
+});

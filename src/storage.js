@@ -14,6 +14,7 @@ const PENDING_KEY = 'snake3d.pending.v1';
 const DEVICE_KEY = 'snake3d.device.v1';
 const TUTORIAL_KEY = 'snake3d.tutorial.v1';
 const SEEN_VERSION_KEY = 'snake3d.seen-version.v1';
+const PROFILE_KEY = 'snake3d.profile.v1';
 /** Сколько раз перед «Играть» предлагаем обучение, если его не прошли. Дальше — только плашка в меню. */
 export const TUTORIAL_OFFERS = 3;
 const MAX_HISTORY = 100;
@@ -69,8 +70,9 @@ export function setPlayerName(settings, raw) {
 }
 
 /**
- * История попыток по режимам, новые сверху: { classic: [{score, length, date}], ... }.
+ * История попыток по режимам, новые сверху: { classic: [{score, length, date, speed}], ... }.
  * Это «Мои» на экране рекордов. В общей таблице у ника — только лучший результат.
+ * speed — скорость партии; у попыток из прошлых версий её нет, они считаются «normal».
  */
 export function loadHistory() {
   const history = read(HISTORY_KEY, null);
@@ -86,23 +88,41 @@ export function loadHistory() {
   return seeded;
 }
 
-/** Лучший результат на этом устройстве в режиме (0, если попыток не было). */
-export function personalBest(mode) {
-  return (loadHistory()[mode] ?? []).reduce((best, a) => Math.max(best, a.score), 0);
+/** Скорость попытки: у записей из прошлых версий её нет — тогда «normal». */
+export const attemptSpeed = (a) => a.speed ?? 'normal';
+
+/** Лучший результат на этом устройстве в режиме и на скорости (0, если попыток не было). */
+export function personalBest(mode, speed = 'normal') {
+  return (loadHistory()[mode] ?? [])
+    .filter((a) => attemptSpeed(a) === speed)
+    .reduce((best, a) => Math.max(best, a.score), 0);
 }
 
 /**
- * Записывает попытку в историю. Возвращает true, если побит личный рекорд.
- * История ограничена MAX_HISTORY попытками, но лучшая из них не вытесняется никогда.
+ * Записывает попытку в историю. Возвращает true, если побит личный рекорд на этой скорости.
+ * История ограничена MAX_HISTORY попытками, но лучшая на каждой скорости не вытесняется никогда.
  */
-export function addAttempt(mode, { score, length, date = Date.now() }) {
-  const before = personalBest(mode);
+export function addAttempt(mode, {
+  score, length, speed = 'normal', date = Date.now(),
+}) {
+  const before = personalBest(mode, speed);
   const history = loadHistory();
-  let list = [{ score, length, date }, ...(history[mode] ?? [])];
+  let list = [{
+    score, length, date, speed,
+  }, ...(history[mode] ?? [])];
   if (list.length > MAX_HISTORY) {
-    const top = list.reduce((a, b) => (b.score > a.score ? b : a));
+    const tops = new Map();
+    for (const a of list) {
+      const s = attemptSpeed(a);
+      if (!tops.has(s) || a.score > tops.get(s).score) tops.set(s, a);
+    }
+    const keep = new Set(tops.values());
     list = list.slice(0, MAX_HISTORY);
-    if (!list.includes(top)) list[MAX_HISTORY - 1] = top;
+    // Вытесненные лучшие возвращаем на места самых старых обычных попыток (не на место другой лучшей).
+    const missing = [...keep].filter((top) => !list.includes(top));
+    for (let i = list.length - 1; i >= 0 && missing.length; i -= 1) {
+      if (!keep.has(list[i])) list[i] = missing.shift();
+    }
   }
   history[mode] = list;
   write(HISTORY_KEY, history);
@@ -155,22 +175,40 @@ export function deviceKey() {
 }
 
 /**
+ * Профиль с паролем: ник, который защищён паролем и доступен с других устройств.
+ * Хранится только ключ ника (nameKey) — ни пароля, ни ключа входа на устройстве нет.
+ */
+export function loadProfile() {
+  const p = read(PROFILE_KEY, null);
+  return p && typeof p.nameKey === 'string' ? p : null;
+}
+
+export function saveProfile(nameKey) {
+  write(PROFILE_KEY, { nameKey, since: Date.now() });
+}
+
+/**
  * Рекорды, которые не удалось отправить в общую таблицу (нет сети, слишком часто).
- * По одному на режим — самый лучший; отправляются при следующей возможности.
+ * По одному на режим и скорость — самый лучший; отправляются при следующей возможности.
+ * Ключ «нормальной» скорости — просто режим, как в прошлых версиях игры.
  */
 export function loadPending() {
   return read(PENDING_KEY, {});
 }
 
+const pendingKey = (mode, speed = 'normal') => (speed === 'normal' ? mode : `${mode}:${speed}`);
+
 export function savePending(entry) {
   const pending = loadPending();
-  if (!pending[entry.mode] || pending[entry.mode].score < entry.score) pending[entry.mode] = entry;
+  const key = pendingKey(entry.mode, entry.speed);
+  if (!pending[key] || pending[key].score < entry.score) pending[key] = entry;
   write(PENDING_KEY, pending);
 }
 
-export function clearPending(mode, score) {
+export function clearPending(mode, score, speed = 'normal') {
   const pending = loadPending();
+  const key = pendingKey(mode, speed);
   // Пока отправляли, мог появиться рекорд ещё лучше — его не трогаем.
-  if (pending[mode] && pending[mode].score <= score) delete pending[mode];
+  if (pending[key] && pending[key].score <= score) delete pending[key];
   write(PENDING_KEY, pending);
 }

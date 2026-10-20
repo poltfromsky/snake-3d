@@ -6,7 +6,7 @@ import { $, setHtml } from './dom.js';
 import { iconHtml } from './icons.js';
 
 const SCREENS = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install',
-  'tutorial-offer', 'tutorial-done', 'whats-new'];
+  'tutorial-offer', 'tutorial-done', 'whats-new', 'profile'];
 // Поверх каких экранов виден HUD (null — игра без оверлея).
 const WITH_HUD = new Set([null, 'pause', 'over', 'duel']);
 

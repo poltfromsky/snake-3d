@@ -101,3 +101,16 @@ test('несколько очков за пару секунд — нормал�
   assert.deepEqual(checkRun({ score: 10, elapsedMs: RUN_TTL_MS + 1 }), { ok: false, reason: 'expired' });
   assert.deepEqual(checkRun({ score: 10, elapsedMs: Number.NaN }), { ok: false, reason: 'expired' });
 });
+
+test('на медленной скорости проверка строже: то же время, что на быстрой, — уже подозрительно', () => {
+  const score = 400;
+  const fastMin = minRunMs(score, 1.35);
+  const slowMin = minRunMs(score, 0.75);
+  assert.ok(slowMin > fastMin * 1.7, 'медленная скорость — заметно больше минимального времени');
+  // Время, правдоподобное для быстрой скорости, на медленной не проходит.
+  const t = fastMin;
+  assert.equal(checkRun({ score, elapsedMs: t, speed: 'fast' }).ok, true);
+  assert.equal(checkRun({ score, elapsedMs: t, speed: 'slow' }).ok, false);
+  // Без скорости — проверка по самой быстрой, как раньше.
+  assert.equal(checkRun({ score, elapsedMs: t }).ok, true);
+});
