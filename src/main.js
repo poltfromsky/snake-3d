@@ -495,9 +495,23 @@ const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, setti
 const profileScreen = createProfileScreen({
   settings,
   leaderboard,
-  // Вошли в профиль или создали его: ник мог смениться — обновим поле ника и подписи.
-  onChange: () => settingsScreen.render(),
+  achievementsSummary: () => {
+    const list = achievements.list();
+    return { open: list.filter((a) => a.unlockedAt).length, total: list.length };
+  },
+  // Вошли, вышли или создали профиль: ник мог смениться — обновим поле ника и подписи.
+  onChange: () => {
+    settingsScreen.render();
+    updateProfileButton();
+  },
 });
+/** Откуда открыли профиль: туда и ведёт «Назад» (меню или настройки). */
+let profileFrom = 'menu';
+
+/** Кнопка профиля в меню: «Профиль · ник», если вошли, иначе приглашение войти. */
+function updateProfileButton() {
+  $('#btn-profile-label').textContent = profileScreen.menuLabel();
+}
 const tutorialUI = createTutorialUI({
   onNext: () => { if (mode.kind === 'tutorial') mode.next(); },
   onSkip: () => toMenu(),
@@ -663,6 +677,7 @@ const ACTIONS = {
     show('settings');
   },
   profile: () => {
+    profileFrom = screen === 'settings' ? 'settings' : 'menu';
     profileScreen.render();
     show('profile');
   },
@@ -672,8 +687,14 @@ const ACTIONS = {
       $('#profile-state').textContent = 'Сначала сохраните код восстановления и отметьте это.';
       return;
     }
-    settingsScreen.render();
-    show('settings');
+    updateProfileButton();
+    if (profileFrom === 'settings') settingsScreen.render();
+    show(profileFrom);
+  },
+  'profile-achievements': () => {
+    renderAchievements(achievements);
+    backTo = 'profile';
+    show('achievements');
   },
   install: () => installer.install(),
   'whats-new': () => whatsNew.showHistory(),
@@ -682,6 +703,8 @@ const ACTIONS = {
     if (backTo === 'menu') toMenu();
     else show(backTo);
     if (backTo === 'over') saver.refreshName();
+    // Ник могли поменять в настройках — подпись кнопки профиля в меню тоже.
+    updateProfileButton();
   },
 };
 
@@ -728,6 +751,7 @@ exposeForTests({
   simulateUpdateReady: () => whatsNew.onUpdateReady(),
 });
 markActive($('#mode-select'), 'mode', settings.mode);
+updateProfileButton();
 // Общая таблица и отзывы появляются, только когда подключена база.
 for (const el of document.querySelectorAll('.online-only')) {
   el.classList.toggle('hidden', !leaderboard.enabled);

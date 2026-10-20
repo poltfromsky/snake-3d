@@ -92,3 +92,20 @@ test('очередь неотправленных: отдельно для ка�
   clearPending('classic', 25, 'fast');
   assert.deepEqual(Object.keys(loadPending()), ['classic'], 'нормальную не тронули');
 });
+
+test('выход из профиля: ник и профиль забыты, ключ устройства новый, история и очередь — как задумано', async () => {
+  const { deviceKey, loadProfile, logoutProfile, saveProfile } = await import('../src/storage.js');
+  const settings = { ...DEFAULT_SETTINGS };
+  setPlayerName(settings, 'Питон');
+  saveProfile('питон');
+  const before = deviceKey();
+  addAttempt('classic', { score: 50, length: 8, date: 1 });
+  savePending({ name: 'Питон', mode: 'classic', score: 50, length: 8 });
+
+  logoutProfile(settings);
+  assert.equal(settings.playerName, '');
+  assert.equal(loadProfile(), null);
+  assert.notEqual(deviceKey(), before, 'старый ключ, допущенный к нику, больше не используется');
+  assert.deepEqual(loadPending(), {}, 'неотправленные рекорды под старым ником не уйдут');
+  assert.equal(personalBest('classic'), 50, 'история попыток осталась');
+});

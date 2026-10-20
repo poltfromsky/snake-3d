@@ -367,20 +367,29 @@ test.describe('рекорды по скоростям', () => {
 test.describe('профиль с паролем', () => {
   test.use({ serviceWorkers: 'block' });
 
+  /** Открыть профиль кнопкой из меню, как игрок. */
   const openProfile = async (page) => {
-    await page.locator('#screen-menu [data-action="settings"]').click();
-    await page.locator('#screen-settings [data-action="profile"]').click();
+    await page.locator('#screen-menu [data-action="profile"]').click();
     await expect(page.locator('#screen-profile')).toBeVisible();
   };
 
-  test('пароль защищает ник: профиль создаётся, код показывается один раз, с другого устройства можно войти', async ({ page, browser }, testInfo) => {
+  test('регистрация, код восстановления, «Мой профиль», вход с другого устройства и выход', async ({ page, browser }, testInfo) => {
     const nick = `Проф${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
     const password = 'пароль-для-теста-1';
     const errors = await openGame(page, { playerName: nick });
     await uniqueSenderForRecords(page);
+    await expect(page.locator('#btn-profile-label')).toHaveText('Войти или создать профиль');
     await openProfile(page);
 
-    // Создание: пароли должны совпадать и быть не короче 8 знаков.
+    // Ник есть, профиля нет — открыта вкладка «Регистрация», ник уже подставлен; есть и вкладка «Вход».
+    await expect(page.locator('#profile-tabs [data-tab="register"]')).toHaveClass(/active/);
+    await expect(page.locator('#profile-new-name')).toHaveValue(nick);
+    await page.locator('#profile-tabs [data-tab="login"]').click();
+    await expect(page.locator('#profile-login')).toBeVisible();
+    await expect(page.locator('#profile-forgot')).toBeVisible();
+    await page.locator('#profile-tabs [data-tab="register"]').click();
+
+    // Пароли должны совпадать и быть не короче 8 знаков.
     await page.locator('#profile-new-pass').fill(password);
     await page.locator('#profile-new-pass2').fill('другой-пароль-2');
     await page.locator('#profile-create button[type=submit]').click();
@@ -403,29 +412,47 @@ test.describe('профиль с паролем', () => {
     await expect(page.locator('#profile-state')).toContainText('сохраните код');
     await page.locator('#profile-code-saved').check();
     await page.locator('#profile-code-done').click();
-    await expect(page.locator('#profile-state')).toContainText('защищён паролем');
-    await expect(page.locator('#profile-code')).toBeHidden();
-    await page.locator('#screen-profile [data-action="profile-back"]').click();
-    await expect(page.locator('#settings-profile-state')).toHaveText('Ник защищён паролем.');
 
-    // Другое устройство: чистое хранилище. Неверный пароль — отказ, верный — вход под тем же ником.
+    // «Мой профиль»: ник, статистика, достижения, смена пароля и выход.
+    await expect(page.locator('#profile-me')).toBeVisible();
+    await expect(page.locator('#profile-title')).toHaveText('Мой профиль');
+    await expect(page.locator('#profile-me-name')).toHaveText(nick);
+    await expect(page.locator('#profile-achievements')).toContainText(' из ');
+    await expect(page.locator('#profile-records li')).toHaveCount(1);
+    await expect(page.locator('#profile-tabs')).toBeHidden();
+    await page.locator('#screen-profile [data-action="profile-achievements"]').click();
+    await expect(page.locator('#screen-achievements')).toBeVisible();
+    await page.locator('#screen-achievements [data-action="back"]').click();
+    await expect(page.locator('#profile-me')).toBeVisible();
+    await page.locator('#screen-profile [data-action="profile-back"]').click();
+    await expect(page.locator('#btn-profile-label')).toHaveText(`Профиль · ${nick}`);
+
+    // Другое устройство: чистое хранилище. Неверный пароль — отказ, верный — «Мой профиль».
     const other = await browser.newContext();
     try {
       const phone = await other.newPage();
       const phoneErrors = await openGame(phone, { playerName: '' });
       await uniqueSenderForRecords(phone);
       await openProfile(phone);
-      await expect(phone.locator('#profile-create')).toBeHidden();
+      await expect(phone.locator('#profile-tabs [data-tab="login"]')).toHaveClass(/active/);
       await phone.locator('#profile-login-name').fill(nick);
       await phone.locator('#profile-login-pass').fill('не-тот-пароль-9');
       await phone.locator('#profile-login button[type=submit]').click();
       await expect(phone.locator('#profile-status')).toHaveText('Неверный ник или пароль.', { timeout: 20_000 });
       await phone.locator('#profile-login-pass').fill(password);
       await phone.locator('#profile-login button[type=submit]').click();
-      await expect(phone.locator('#profile-status')).toContainText(`Вы вошли как «${nick}»`, { timeout: 20_000 });
-      await expect(phone.locator('#profile-state')).toContainText('защищён паролем');
+      await expect(phone.locator('#profile-status')).toHaveText(`Вы вошли как «${nick}».`, { timeout: 20_000 });
+      await expect(phone.locator('#profile-me-name')).toHaveText(nick);
+
+      // Выход: первое нажатие — предупреждение, второе — выход; ник забыт, снова экран входа.
+      await phone.locator('#profile-logout').click();
+      await expect(phone.locator('#profile-logout')).toHaveText('Точно выйти? Нажмите ещё раз');
+      await expect(phone.locator('#profile-me')).toBeVisible();
+      await phone.locator('#profile-logout').click();
+      await expect(phone.locator('#profile-status')).toHaveText(`Вы вышли из профиля «${nick}».`);
+      await expect(phone.locator('#profile-login')).toBeVisible();
       await phone.locator('#screen-profile [data-action="profile-back"]').click();
-      await expect(phone.locator('#set-name')).toHaveValue(nick);
+      await expect(phone.locator('#btn-profile-label')).toHaveText('Войти или создать профиль');
       expect(phoneErrors).toEqual([]);
     } finally {
       await other.close();

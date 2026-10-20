@@ -355,6 +355,47 @@ input:not([type]), input[type="text"], input[type="password"], textarea {
   border-radius: 12px;
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+/* Профиль игрока */
+.profile-card { display: flex; gap: 12px; align-items: center; text-align: left; }
+.profile-card b { display: block; font-size: 20px; }
+.profile-card small { color: var(--muted); font-size: 12px; }
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 52px;
+  height: 52px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 50%;
+}
+.profile-avatar .icon { width: 28px; height: 28px; }
+.profile-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.profile-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+.profile-stats b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.profile-stats small, .profile-records small { color: var(--muted); font-size: 12px; }
+.profile-heading { margin: 4px 0 0; font-size: 14px; color: var(--muted); text-align: left; }
+.profile-records { margin: 0; padding: 0; list-style: none; text-align: left; }
+.profile-records li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.profile-records li b { font-variant-numeric: tabular-nums; }
+.profile-records li.empty { display: block; color: var(--muted); border: none; }
+.profile-records .platform-icon { display: inline-block; width: 1em; height: 1em; margin-right: 0.35em; vertical-align: -0.15em; color: var(--muted); }
+.profile-btn { display: flex; gap: 8px; align-items: center; justify-content: center; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; text-align: left; }
 .record-auto { display: flex; flex-direction: column; gap: 6px; }
 .record-auto-title { margin: 0; font-weight: 600; color: var(--accent); }

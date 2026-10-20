@@ -89,6 +89,24 @@ export class Leaderboard {
     await this.request('account/login', { method: 'POST', body: { name, device, key } });
   }
 
+  /** Сменить пароль, зная текущий (оба — ключи входа, не сами пароли). */
+  async changePassword({
+    name, device, key, newKey,
+  }) {
+    await this.request('account/password', {
+      method: 'POST',
+      body: {
+        name, device, key, newKey,
+      },
+    });
+  }
+
+  /** Лучшие результаты ника во всех режимах и скоростях с местом в таблице — для профиля. */
+  async playerStats(name) {
+    if (!name) return [];
+    return this.request(`records/player?name=${encodeURIComponent(name)}`);
+  }
+
   /** Забыли пароль: новый пароль по коду восстановления; в ответе новый код. */
   async recover({ name, device, code, key }) {
     return this.request('account/recover', { method: 'POST', body: { name, device, code, key } });

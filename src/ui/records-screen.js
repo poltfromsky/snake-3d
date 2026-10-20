@@ -10,10 +10,10 @@ import { $, markActive } from './dom.js';
 import { iconSvg } from './icons.js';
 
 /** Значок платформы у ника: чем играли в партии с этим рекордом. */
-const PLATFORM_ICONS = Object.freeze({
+export const PLATFORM_ICONS = Object.freeze({
   pc: { icon: 'monitor', label: 'Компьютер' },
   touch: { icon: 'phoneSwipe', label: 'Телефон, свайпы' },
-  buttons: { icon: 'dpad', label: 'Телефон, кнопки на экране' },
+  buttons: { icon: 'phoneButtons', label: 'Телефон, кнопки на экране' },
 });
 
 /**

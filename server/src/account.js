@@ -6,6 +6,7 @@
  *   POST /api/account/login    {name, device, key}        — войти: это устройство получает ник
  *   POST /api/account/recover  {name, device, code, key}  — забыли пароль: новый пароль по коду,
  *                                                           в ответе новый код восстановления
+ *   POST /api/account/password {name, device, key, newKey} — сменить пароль, зная старый
  *
  * key — ключ входа: браузер растягивает пароль в 64 шестнадцатеричных знака (src/core/auth.js),
  * сам пароль сервер не получает. В базе — только SHA-256 от ключа и от кода восстановления.
@@ -145,5 +146,29 @@ export function createAccountHandlers({
     return json({ ok: true, recoveryCode }, 200, request, env);
   }
 
-  return { create, login, recover };
+  async function changePassword(request, env) {
+    const body = (await readJson(request)) ?? {};
+    const fields = common(body);
+    if (!fields || !isLoginKey(body.key) || !isLoginKey(body.newKey)) {
+      return json({ error: 'Некорректный запрос.' }, 400, request, env);
+    }
+    const hash = await clientHash(request, env);
+    if (await tooManyFails(env, fields.key, hash)) return limitReply(request, env);
+
+    const account = await env.DB.prepare('SELECT auth_hash FROM accounts WHERE name_key = ?').bind(fields.key).first();
+    const given = await secretHash('auth', body.key);
+    const ok = Boolean(account) && safeEqual(given, account.auth_hash);
+    await noteAttempt(env, fields.key, hash, ok);
+    if (!ok) return refuse('bad_login', 'Неверный текущий пароль.', 401, request, env);
+
+    await env.DB
+      .prepare(`UPDATE accounts SET auth_hash = ?, updated_at = datetime('now') WHERE name_key = ?`)
+      .bind(await secretHash('auth', body.newKey), fields.key)
+      .run();
+    return json({ ok: true }, 200, request, env);
+  }
+
+  return {
+    create, login, recover, changePassword,
+  };
 }

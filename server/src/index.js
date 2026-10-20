@@ -12,7 +12,9 @@
  *                                     в таблице одна строка на ник и скорость, обновляется, только если
  *                                     результат лучше; ник принадлежит устройству (device),
  *                                     счёт проверяется на правдоподобие по времени партии
- *   POST /api/account/create|login|recover — профиль с паролем и кодом восстановления (server/src/account.js)
+ *   GET  /api/records/player?name=… — лучшие результаты ника во всех режимах и скоростях с местом
+ *                                     в таблице: [{mode, speed, score, length, platform, place}] (профиль игрока)
+ *   POST /api/account/create|login|recover|password — профиль с паролем и кодом восстановления (server/src/account.js)
  *   POST /api/feedback              — оставить отзыв (читает только владелец, в D1)
  *   GET  /api/health                — проверка, что сервер жив
  */
@@ -156,6 +158,33 @@ async function placeOf(request, env, url) {
     .bind(mode, speed, key)
     .first();
   return json(row ?? null, 200, request, env);
+}
+
+/**
+ * Статистика игрока для экрана профиля: его лучшая строка в каждом режиме и скорости и место
+ * в этой таблице. Данные те же, что и в общей таблице (они и так публичные).
+ */
+async function playerRecords(request, env, url) {
+  const key = nameKey(url.searchParams.get('name'));
+  if (!key) return json({ error: 'unknown name' }, 400, request, env);
+  const { results } = await env.DB
+    .prepare(`WITH best AS (
+                SELECT COALESCE(name_key, lower(trim(name))) AS k, mode, speed, score, length, platform, created_at,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY mode, speed, COALESCE(name_key, lower(trim(name)))
+                         ORDER BY score DESC, created_at ASC
+                       ) AS n
+                FROM records
+              ), ranked AS (
+                SELECT k, mode, speed, score, length, platform,
+                       RANK() OVER (PARTITION BY mode, speed ORDER BY score DESC) AS place
+                FROM best WHERE n = 1
+              )
+              SELECT mode, speed, score, length, platform, place FROM ranked WHERE k = ?
+              ORDER BY mode, speed`)
+    .bind(key)
+    .all();
+  return json(results, 200, request, env);
 }
 
 async function sha256(text) {
@@ -325,12 +354,14 @@ export default {
       if (url.pathname === '/api/rooms' && request.method === 'POST') return await createRoom(request, env);
       if (url.pathname === '/api/records' && request.method === 'GET') return await topRecords(request, env, url);
       if (url.pathname === '/api/records/place' && request.method === 'GET') return await placeOf(request, env, url);
+      if (url.pathname === '/api/records/player' && request.method === 'GET') return await playerRecords(request, env, url);
       if (url.pathname === '/api/records' && request.method === 'POST') return await addRecord(request, env);
       if (url.pathname === '/api/runs' && request.method === 'POST') return await startRun(request, env);
       if (url.pathname === '/api/feedback' && request.method === 'POST') return await addFeedback(request, env);
       if (url.pathname === '/api/account/create' && request.method === 'POST') return await account.create(request, env);
       if (url.pathname === '/api/account/login' && request.method === 'POST') return await account.login(request, env);
       if (url.pathname === '/api/account/recover' && request.method === 'POST') return await account.recover(request, env);
+      if (url.pathname === '/api/account/password' && request.method === 'POST') return await account.changePassword(request, env);
     } catch (err) {
       // В лог — только текст ошибки, без запроса и заголовков (там IP игрока).
       console.error(err?.message ?? 'unknown error');

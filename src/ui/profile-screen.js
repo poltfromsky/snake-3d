@@ -1,29 +1,46 @@
 /**
- * Экран «Профиль»: защитить ник паролем, войти под своим ником с другого устройства,
- * восстановить доступ по коду. Пароль никуда не отправляется: браузер превращает его
- * в ключ входа (src/core/auth.js, ~0,5 с), и на сервер уходит только он.
+ * Экран «Профиль» — как в играх:
+ *   не вошли → вкладки «Вход» и «Регистрация», под входом «Забыли пароль?» (код восстановления);
+ *   вошли    → «Мой профиль»: ник, попытки и достижения на этом устройстве, лучшие результаты
+ *              в общей таблице (с местом и значком платформы), смена пароля, выход.
  *
- * Профиль необязателен: без него ник просто принадлежит этому устройству, как раньше.
+ * Пароль никуда не отправляется: браузер превращает его в ключ входа (src/core/auth.js, ~0,5 с),
+ * и на сервер уходит только он. Профиль необязателен: без него ник принадлежит этому устройству.
  */
 import {
   deriveLoginKey, isRecoveryCode, normalizeRecoveryCode, passwordProblem,
 } from '../core/auth.js';
 import { cleanText, LIMITS, nameKey } from '../core/validate.js';
 import {
-  deviceKey, loadProfile, saveProfile, setPlayerName,
+  deviceKey, loadHistory, loadProfile, logoutProfile, saveProfile, setPlayerName,
 } from '../storage.js';
-import { $, serverMessage } from './dom.js';
+import { $, markActive, serverMessage } from './dom.js';
+import { iconSvg } from './icons.js';
+import { PLATFORM_ICONS } from './records-screen.js';
+
+const MODE_LABELS = Object.freeze({ classic: 'Классика', walls: 'Стены', timed: 'На время' });
+const SPEED_LABELS = Object.freeze({ slow: 'Медленно', normal: 'Нормально', fast: 'Быстро' });
+const PARTS = ['#profile-tabs', '#profile-login', '#profile-create', '#profile-recover', '#profile-me', '#profile-password', '#profile-code'];
+const PASSWORD_FIELDS = ['#profile-login-pass', '#profile-new-pass', '#profile-new-pass2', '#profile-recover-pass',
+  '#profile-recover-pass2', '#profile-current-pass', '#profile-change-pass', '#profile-change-pass2'];
+/** Сколько ждать второго нажатия «Выйти из профиля». */
+const LOGOUT_CONFIRM_MS = 5000;
 
 /**
  * @param {object} deps
  * @param {object} deps.settings здесь хранится ник
  * @param {import('../net/leaderboard.js').Leaderboard} deps.leaderboard
- * @param {() => void} [deps.onChange] профиль создан или выполнен вход — обновить остальные экраны
+ * @param {() => {open: number, total: number}} deps.achievementsSummary
+ * @param {() => void} [deps.onChange] вошли, вышли, создали профиль — обновить остальные экраны
  */
-export function createProfileScreen({ settings, leaderboard, onChange = () => {} }) {
+export function createProfileScreen({
+  settings, leaderboard, achievementsSummary, onChange = () => {},
+}) {
   let busy = false;
+  let statsRequest = 0;
+  let logoutArmedUntil = 0;
 
-  /** Профиль включён, если им защищён именно текущий ник этого устройства. */
+  /** Вошли в профиль, если им защищён именно текущий ник этого устройства. */
   const isActive = () => {
     const profile = loadProfile();
     return Boolean(profile && settings.playerName && profile.nameKey === nameKey(settings.playerName));
@@ -35,32 +52,117 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
     el.classList.toggle('error', isError);
   }
 
-  const forms = ['#profile-create', '#profile-login', '#profile-recover', '#profile-code'];
-  function showOnly(...ids) {
-    for (const id of forms) $(id).classList.toggle('hidden', !ids.includes(id));
+  function only(...ids) {
+    for (const id of PARTS) $(id).classList.toggle('hidden', !ids.includes(id));
   }
 
-  /** Что показать: профиль уже есть / можно создать / можно только войти. */
+  function clearPasswords() {
+    for (const id of PASSWORD_FIELDS) $(id).value = '';
+  }
+
+  function resetLogout() {
+    logoutArmedUntil = 0;
+    $('#profile-logout').textContent = 'Выйти из профиля';
+  }
+
+  /** Не вошли: вкладка «Вход» или «Регистрация». */
+  function showAuth(tab) {
+    $('#profile-title').textContent = 'Профиль';
+    const name = settings.playerName;
+    $('#profile-state').textContent = name
+      ? `Ник «${name}» пока только на этом устройстве. Создайте профиль — и заходите под ним с телефона и компьютера.`
+      : 'Войдите, если профиль уже есть, или создайте новый.';
+    markActive($('#profile-tabs'), 'tab', tab);
+    only('#profile-tabs', tab === 'login' ? '#profile-login' : '#profile-create');
+    $('#profile-login-name').value = name;
+    $('#profile-new-name').value = name;
+  }
+
+  /** Строка лучшего результата: «Классика · Нормально», значок платформы, счёт и место. */
+  function recordRow(r) {
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    const platform = PLATFORM_ICONS[r.platform];
+    if (platform) {
+      const icon = iconSvg(platform.icon, 'icon platform-icon');
+      icon.setAttribute('aria-hidden', 'false');
+      icon.setAttribute('role', 'img');
+      icon.setAttribute('aria-label', platform.label);
+      label.append(icon);
+    }
+    label.append(`${MODE_LABELS[r.mode] ?? r.mode} · ${SPEED_LABELS[r.speed] ?? r.speed}`);
+    const score = document.createElement('b');
+    score.textContent = r.score;
+    const meta = document.createElement('small');
+    meta.textContent = `длина ${r.length} · ${r.place}-е место`;
+    li.append(label, score, meta);
+    return li;
+  }
+
+  function recordsMessage(text) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = text;
+    $('#profile-records').replaceChildren(li);
+  }
+
+  /** Вошли: «Мой профиль». */
+  function showMe() {
+    const name = settings.playerName;
+    $('#profile-title').textContent = 'Мой профиль';
+    $('#profile-state').textContent = '';
+    $('#profile-me-name').textContent = name;
+    const games = Object.values(loadHistory()).reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
+    $('#profile-games').textContent = games;
+    const { open, total } = achievementsSummary();
+    $('#profile-achievements').textContent = `${open} из ${total}`;
+    resetLogout();
+    only('#profile-me');
+
+    const id = ++statsRequest;
+    recordsMessage('Загружаем…');
+    leaderboard.playerStats(name).then((rows) => {
+      if (id !== statsRequest) return;
+      if (!rows.length) {
+        recordsMessage('Пока нет — сыграйте и отправьте рекорд в общую таблицу.');
+        return;
+      }
+      $('#profile-records').replaceChildren(...rows.map(recordRow));
+    }, () => {
+      if (id === statsRequest) recordsMessage('Не удалось загрузить — проверьте интернет.');
+    });
+  }
+
+  function showRecover(name) {
+    $('#profile-title').textContent = 'Восстановление';
+    $('#profile-state').textContent = '';
+    only('#profile-recover');
+    $('#profile-recover-name').value = name ?? '';
+    $('#profile-recover-code').value = '';
+  }
+
+  function showPassword() {
+    $('#profile-title').textContent = 'Смена пароля';
+    $('#profile-state').textContent = '';
+    only('#profile-password');
+  }
+
+  /** Код восстановления: один раз, пока игрок не подтвердит, что сохранил. */
+  function showCode(code) {
+    $('#profile-title').textContent = 'Профиль';
+    $('#profile-state').textContent = 'Сохраните код восстановления.';
+    $('#profile-code-text').textContent = code;
+    $('#profile-code-saved').checked = false;
+    $('#profile-code-done').disabled = true;
+    only('#profile-code');
+  }
+
+  /** Открыть экран: вошли — «Мой профиль», нет — вход или регистрация. */
   function render() {
     status('');
-    const name = settings.playerName;
-    if (isActive()) {
-      $('#profile-state').textContent = `Ник «${name}» защищён паролем: им можно пользоваться на других устройствах.`;
-      showOnly('#profile-recover');
-      $('#profile-recover-name').value = name;
-    } else if (name) {
-      $('#profile-state').textContent = `Ник «${name}» пока принадлежит только этому устройству.`;
-      showOnly('#profile-create', '#profile-login');
-      $('#profile-login-name').value = name;
-    } else {
-      $('#profile-state').textContent = 'Чтобы защитить ник паролем, сначала введите его в настройках. Если ник уже есть на другом устройстве — войдите:';
-      showOnly('#profile-login');
-      $('#profile-login-name').value = '';
-    }
-    for (const id of ['#profile-new-pass', '#profile-new-pass2', '#profile-login-pass', '#profile-recover-pass', '#profile-recover-pass2']) {
-      $(id).value = '';
-    }
-    $('#profile-recover-code').value = '';
+    clearPasswords();
+    if (isActive()) showMe();
+    else showAuth(settings.playerName ? 'register' : 'login');
   }
 
   /** Обёртка долгих действий: блокирует кнопки и объясняет ожидание. */
@@ -80,38 +182,24 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
     }
   }
 
-  /** Показать код восстановления: один раз, пока игрок не подтвердит, что сохранил. */
-  function showCode(code) {
-    $('#profile-code-text').textContent = code;
-    $('#profile-code-saved').checked = false;
-    $('#profile-code-done').disabled = true;
-    showOnly('#profile-code');
-    $('#profile-state').textContent = 'Профиль готов. Сохраните код восстановления.';
-    status('');
-  }
-
   function checkPasswords(first, second) {
     const problem = passwordProblem(first);
     if (problem) return problem;
     return first === second ? null : 'Пароли не совпадают.';
   }
 
-  $('#profile-create').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const name = settings.playerName;
-    const problem = checkPasswords($('#profile-new-pass').value, $('#profile-new-pass2').value);
-    if (problem) {
-      status(problem, true);
-      return;
-    }
-    const password = $('#profile-new-pass').value;
-    run('Защищаем пароль…', async () => {
-      const key = await deriveLoginKey(password, name);
-      const { recoveryCode } = await leaderboard.createProfile({ name, device: deviceKey(), key });
-      saveProfile(nameKey(name));
-      onChange();
-      showCode(recoveryCode);
-    });
+  /** Профиль теперь на этом устройстве под ником name. */
+  function enter(name) {
+    setPlayerName(settings, name);
+    saveProfile(nameKey(name));
+    onChange();
+  }
+
+  $('#profile-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('button')?.dataset.tab;
+    if (!tab) return;
+    status('');
+    showAuth(tab);
   });
 
   $('#profile-login').addEventListener('submit', (e) => {
@@ -125,27 +213,51 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
     run('Проверяем пароль…', async () => {
       const key = await deriveLoginKey(password, name);
       await leaderboard.login({ name, device: deviceKey(), key });
-      setPlayerName(settings, name);
-      saveProfile(nameKey(name));
-      onChange();
-      render();
-      status(`Вы вошли как «${name}». Рекорды в общей таблице теперь пишутся под этим ником.`);
+      enter(name);
+      clearPasswords();
+      showMe();
+      status(`Вы вошли как «${name}».`);
+    });
+  });
+
+  $('#profile-create').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = cleanText($('#profile-new-name').value, LIMITS.name);
+    if (!name) {
+      status('Введите ник.', true);
+      return;
+    }
+    const problem = checkPasswords($('#profile-new-pass').value, $('#profile-new-pass2').value);
+    if (problem) {
+      status(problem, true);
+      return;
+    }
+    const password = $('#profile-new-pass').value;
+    run('Создаём профиль…', async () => {
+      const key = await deriveLoginKey(password, name);
+      const { recoveryCode } = await leaderboard.createProfile({ name, device: deviceKey(), key });
+      enter(name);
+      clearPasswords();
+      status('');
+      showCode(recoveryCode);
     });
   });
 
   $('#profile-forgot').addEventListener('click', () => {
-    showOnly('#profile-recover');
-    $('#profile-recover-name').value = $('#profile-login-name').value;
     status('');
+    showRecover(cleanText($('#profile-login-name').value, LIMITS.name));
   });
 
-  $('#profile-recover-cancel').addEventListener('click', render);
+  $('#profile-recover-cancel').addEventListener('click', () => {
+    status('');
+    if (isActive()) showMe();
+    else showAuth('login');
+  });
 
   $('#profile-recover').addEventListener('submit', (e) => {
     e.preventDefault();
     const name = cleanText($('#profile-recover-name').value, LIMITS.name);
     const code = $('#profile-recover-code').value;
-    const problem = checkPasswords($('#profile-recover-pass').value, $('#profile-recover-pass2').value);
     if (!name) {
       status('Введите ник.', true);
       return;
@@ -154,6 +266,7 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
       status('Код восстановления — четыре группы по пять знаков: XXXXX-XXXXX-XXXXX-XXXXX.', true);
       return;
     }
+    const problem = checkPasswords($('#profile-recover-pass').value, $('#profile-recover-pass2').value);
     if (problem) {
       status(problem, true);
       return;
@@ -164,11 +277,71 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
       const { recoveryCode } = await leaderboard.recover({
         name, device: deviceKey(), code: normalizeRecoveryCode(code), key,
       });
-      setPlayerName(settings, name);
-      saveProfile(nameKey(name));
-      onChange();
+      enter(name);
+      clearPasswords();
+      status('');
       showCode(recoveryCode);
     });
+  });
+
+  $('#profile-change-open').addEventListener('click', () => {
+    status('');
+    clearPasswords();
+    showPassword();
+  });
+
+  $('#profile-change-cancel').addEventListener('click', () => {
+    status('');
+    clearPasswords();
+    showMe();
+  });
+
+  $('#profile-change-forgot').addEventListener('click', () => {
+    status('');
+    clearPasswords();
+    showRecover(settings.playerName);
+  });
+
+  $('#profile-password').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = settings.playerName;
+    const current = $('#profile-current-pass').value;
+    if (!current) {
+      status('Введите текущий пароль.', true);
+      return;
+    }
+    const problem = checkPasswords($('#profile-change-pass').value, $('#profile-change-pass2').value);
+    if (problem) {
+      status(problem, true);
+      return;
+    }
+    const next = $('#profile-change-pass').value;
+    run('Меняем пароль…', async () => {
+      const [key, newKey] = await Promise.all([deriveLoginKey(current, name), deriveLoginKey(next, name)]);
+      await leaderboard.changePassword({
+        name, device: deviceKey(), key, newKey,
+      });
+      clearPasswords();
+      showMe();
+      status('Пароль изменён.');
+    });
+  });
+
+  $('#profile-logout').addEventListener('click', () => {
+    if (Date.now() > logoutArmedUntil) {
+      // Первое нажатие — только предупреждение: выйти случайно было бы обидно.
+      logoutArmedUntil = Date.now() + LOGOUT_CONFIRM_MS;
+      $('#profile-logout').textContent = 'Точно выйти? Нажмите ещё раз';
+      status('После выхода войти снова можно по нику и паролю. Попытки и достижения на устройстве останутся.');
+      return;
+    }
+    const name = settings.playerName;
+    logoutProfile(settings);
+    onChange();
+    resetLogout();
+    showAuth('login');
+    $('#profile-login-name').value = name;
+    status(`Вы вышли из профиля «${name}».`);
   });
 
   $('#profile-code-copy').addEventListener('click', async () => {
@@ -187,7 +360,7 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
 
   $('#profile-code-done').addEventListener('click', () => {
     $('#profile-code-text').textContent = '';
-    render();
+    showMe();
     status('Профиль защищён паролем.');
   });
 
@@ -195,8 +368,12 @@ export function createProfileScreen({ settings, leaderboard, onChange = () => {}
     render,
     /** Короткая строка для экрана настроек. */
     summary() {
-      if (isActive()) return 'Ник защищён паролем.';
-      return settings.playerName ? 'Ник только на этом устройстве.' : 'Ника пока нет.';
+      if (isActive()) return `Вы вошли как «${settings.playerName}».`;
+      return settings.playerName ? 'Ник только на этом устройстве.' : 'Вы не вошли в профиль.';
+    },
+    /** Подпись кнопки в меню. */
+    menuLabel() {
+      return isActive() ? `Профиль · ${settings.playerName}` : 'Войти или создать профиль';
     },
     /** Идёт показ кода восстановления: уйти с экрана, не сохранив код, нельзя. */
     get showingCode() { return !$('#profile-code').classList.contains('hidden'); },

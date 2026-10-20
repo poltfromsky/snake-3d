@@ -104,6 +104,7 @@
           <button class="btn bot-btn legendary" data-action="bot" data-level="claude"><b>Claude</b><small>сильнейший</small></button>
         </div>
       </div>
+      <button class="btn profile-btn online-only hidden" data-action="profile" id="btn-profile"><span class="ic" data-icon="user"></span><span id="btn-profile-label">Войти или создать профиль</span></button>
       <div class="row">
         <button class="btn" data-action="records">Рекорды</button>
         <button class="btn" data-action="achievements">Достижения</button>
@@ -351,25 +352,31 @@
     </div>
   </section>
 
-  <!-- Профиль: защитить ник паролем, войти с другого устройства, восстановить доступ -->
+  <!-- Профиль: вход и регистрация по нику и паролю, восстановление по коду, «Мой профиль» со статистикой -->
   <section id="screen-profile" class="screen hidden">
     <div class="panel">
-      <h2>Профиль</h2>
+      <h2 id="profile-title">Профиль</h2>
       <p class="subtitle" id="profile-state"></p>
 
+      <!-- Не вошли: вход или регистрация, как в играх. -->
+      <div class="segmented compact" id="profile-tabs">
+        <button type="button" data-tab="login">Вход</button>
+        <button type="button" data-tab="register">Регистрация</button>
+      </div>
+
+      <form id="profile-login" class="stack">
+        <input id="profile-login-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
+        <input id="profile-login-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Пароль" aria-label="Пароль">
+        <button class="btn primary" type="submit">Войти</button>
+        <button type="button" class="text-btn" id="profile-forgot">Забыли пароль?</button>
+      </form>
+
       <form id="profile-create" class="stack">
-        <p class="hint">Пароль защитит ник: с ним можно заходить под своим ником с телефона и компьютера. Придумайте пароль только для этой игры — не тот, что у вас на почте или в соцсетях.</p>
+        <p class="hint">Профиль защитит ник паролем: с ним можно заходить под своим ником с телефона и компьютера. Придумайте пароль только для этой игры — не тот, что у вас на почте или в соцсетях.</p>
+        <input id="profile-new-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
         <input id="profile-new-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль (от 8 символов)" aria-label="Пароль">
         <input id="profile-new-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль ещё раз" aria-label="Пароль ещё раз">
         <button class="btn primary" type="submit">Создать профиль</button>
-      </form>
-
-      <form id="profile-login" class="stack">
-        <p class="hint">Ник уже защищён паролем на другом устройстве? Войдите:</p>
-        <input id="profile-login-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
-        <input id="profile-login-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Пароль" aria-label="Пароль">
-        <button class="btn" type="submit">Войти</button>
-        <button type="button" class="text-btn" id="profile-forgot">Забыли пароль?</button>
       </form>
 
       <form id="profile-recover" class="stack hidden">
@@ -379,7 +386,33 @@
         <input id="profile-recover-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль (от 8 символов)" aria-label="Новый пароль">
         <input id="profile-recover-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль ещё раз" aria-label="Новый пароль ещё раз">
         <button class="btn primary" type="submit">Задать новый пароль</button>
-        <button type="button" class="text-btn" id="profile-recover-cancel">Назад ко входу</button>
+        <button type="button" class="text-btn" id="profile-recover-cancel">Назад</button>
+      </form>
+
+      <!-- Вошли: мой профиль. -->
+      <div id="profile-me" class="stack hidden">
+        <div class="profile-card">
+          <span class="profile-avatar" data-icon="user"></span>
+          <div><b id="profile-me-name"></b><small>Профиль защищён паролем</small></div>
+        </div>
+        <div class="profile-stats">
+          <div><b id="profile-games">0</b><small>попыток на этом устройстве</small></div>
+          <div><b id="profile-achievements">0 из 0</b><small>достижений</small></div>
+        </div>
+        <h3 class="profile-heading">Лучшие результаты в общей таблице</h3>
+        <ul id="profile-records" class="profile-records"></ul>
+        <button class="btn" type="button" data-action="profile-achievements">Достижения</button>
+        <button class="btn" type="button" id="profile-change-open">Сменить пароль</button>
+        <button class="btn" type="button" id="profile-logout">Выйти из профиля</button>
+      </div>
+
+      <form id="profile-password" class="stack hidden">
+        <input id="profile-current-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Текущий пароль" aria-label="Текущий пароль">
+        <input id="profile-change-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль (от 8 символов)" aria-label="Новый пароль">
+        <input id="profile-change-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Новый пароль ещё раз" aria-label="Новый пароль ещё раз">
+        <button class="btn primary" type="submit">Сменить пароль</button>
+        <button type="button" class="text-btn" id="profile-change-forgot">Не помню текущий — по коду восстановления</button>
+        <button type="button" class="text-btn" id="profile-change-cancel">Отмена</button>
       </form>
 
       <div id="profile-code" class="stack hidden" role="alert">
@@ -432,7 +465,7 @@
       </div>
       <div class="field online-only hidden">Профиль — вход с другого устройства
         <p class="hint" id="settings-profile-state"></p>
-        <button class="btn" data-action="profile">Профиль и вход</button>
+        <button class="btn" data-action="profile">Профиль</button>
       </div>
       <div class="field">Версия игры <b id="settings-version"></b>
         <button class="btn" data-action="whats-new">История обновлений</button>

@@ -214,6 +214,32 @@ assert.equal((await post('account/login', { name: profileNick, device: deviceC, 
 assert.equal((await post('account/recover', { name: profileNick, device: deviceC, code: code1, key: key2 })).data.code, 'bad_code', 'старый код не действует');
 console.log('✔ восстановление: новый пароль и новый код, старые не действуют');
 
+// Смена пароля, зная старый (свой ник: у прошлого уже набрались неудачные попытки).
+const pwNick = `pw${Date.now().toString(36).slice(-6)}`;
+const pwOld = await keyOf('старый пароль 1', pwNick);
+const pwNew = await keyOf('новый пароль 2', pwNick);
+const deviceE = 'e'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16); // лимит 3 новых ника на устройство
+assert.equal((await post('account/create', { name: pwNick, device: deviceE, key: pwOld })).status, 201);
+reply = await post('account/password', { name: pwNick, device: deviceE, key: pwNew, newKey: pwNew });
+assert.equal(reply.data.code, 'bad_login', 'не зная текущего пароля, не сменить');
+reply = await post('account/password', { name: pwNick, device: deviceE, key: pwOld, newKey: pwNew });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+assert.equal((await post('account/login', { name: pwNick, device: deviceC, key: pwOld })).data.code, 'bad_login');
+assert.equal((await post('account/login', { name: pwNick, device: deviceC, key: pwNew })).status, 200);
+console.log('✔ смена пароля: только зная текущий, после смены действует новый');
+
+// Статистика игрока: лучшие строки во всех режимах и скоростях с местом.
+const stats = await (await fetch(`${B}/api/records/player?name=${encodeURIComponent(nick)}`)).json();
+const timedNormal = stats.find((r) => r.mode === 'timed' && r.speed === 'normal');
+const timedSlow = stats.find((r) => r.mode === 'timed' && r.speed === 'slow');
+assert.equal(timedNormal?.score, 60, JSON.stringify(stats));
+assert.equal(timedSlow?.score, 20);
+assert.equal(timedSlow?.platform, 'touch');
+assert.ok(Number.isInteger(timedNormal.place) && timedNormal.place >= 1);
+assert.deepEqual(await (await fetch(`${B}/api/records/player?name=nobody-${nick}`)).json(), []);
+assert.equal((await fetch(`${B}/api/records/player`)).status, 400);
+console.log('✔ статистика игрока: лучший результат и место в каждом режиме и скорости');
+
 const fresh = 'c'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
 for (let i = 1; i <= 3; i += 1) {
   assert.equal((await submit(`${nick}n${i}`, 10, fresh)).status, 201, `новый ник ${i}`);
