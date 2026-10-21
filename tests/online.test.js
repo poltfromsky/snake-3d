@@ -72,6 +72,18 @@ test('сервер не отвечает вовсе — через 10 секун
   assert.match((await result).error, /Сервер не отвечает/);
 });
 
+test('отказ сервера (комнаты нет) помечен — его не повторяют, а обрыв связи — повторяют', async () => {
+  const refusedOf = (promise) => promise.then(() => null, (e) => e.refused);
+  const refused = refusedOf(new RoomConnection('http://localhost:8787', 'ABCDE', {}).connect());
+  FakeSocket.last.open();
+  FakeSocket.last.receive({ t: 'error', text: 'Комната не найдена или устарела.' });
+  assert.equal(await refused, true);
+
+  const lost = refusedOf(new RoomConnection('http://localhost:8787', 'ABCDE', {}).connect());
+  FakeSocket.last.emit('close');
+  assert.equal(await lost, false);
+});
+
 test('соединение открыто, но ответа нет полминуты — тоже ошибка, а не вечное ожидание', async () => {
   const conn = new RoomConnection('http://localhost:8787', 'ABCDE', {});
   const result = settle(conn.connect());

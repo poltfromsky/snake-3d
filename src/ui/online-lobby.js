@@ -6,6 +6,8 @@ import { createRoom, normalizeRoomCode, RoomConnection, roomLink } from '../net/
 import { $ } from './dom.js';
 import { bindNameInput } from './nickname.js';
 
+const CONNECT_ATTEMPTS = 2;
+
 /**
  * Колбэки получают соединение, от которого пришло событие: приложение
  * сверяет его с текущим и не путает старую комнату с новой.
@@ -39,7 +41,11 @@ export function createOnlineLobby({ apiBase, settings, onJoined, onMessage, onCl
     status('');
   }
 
-  async function connect(code) {
+  /**
+   * Оборванную связь пробуем ещё раз: первое подключение порой срывается
+   * (нестабильный VPN, сеть телефона). Отказ сервера — сразу ошибка.
+   */
+  async function connect(code, attempt = 1) {
     const connection = new RoomConnection(apiBase, code, {
       onMessage: (msg) => onMessage(msg, connection),
       onClose: () => onClose(connection),
@@ -48,7 +54,9 @@ export function createOnlineLobby({ apiBase, settings, onJoined, onMessage, onCl
       onJoined(connection, await connection.connect());
     } catch (err) {
       connection.close();
-      throw err;
+      if (err?.refused || attempt >= CONNECT_ATTEMPTS) throw err;
+      status('Связь сорвалась, подключаемся ещё раз…');
+      await connect(code, attempt + 1);
     }
   }
 

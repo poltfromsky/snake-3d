@@ -58,6 +58,9 @@ export default defineConfig({
       // и без миграций сервер отвечал бы на рекорды и отзывы ошибкой.
       command: 'npm run db:local && npx wrangler dev --port 8787 --ip 127.0.0.1',
       cwd: 'server',
+      // Журнал комнат (события подключений, без адресов и содержимого) — в лог CI:
+      // по нему видно, на каком шаге сорвалось онлайн-подключение.
+      stdout: 'pipe',
       url: 'http://127.0.0.1:8787/api/health',
       reuseExistingServer: !CI,
       timeout: 120_000,

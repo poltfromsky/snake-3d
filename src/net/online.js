@@ -45,6 +45,8 @@ export async function createRoom(apiBase, { mode, speed }) {
 /**
  * Подключение к комнате. Колбэки: onMessage(msg), onClose(reason).
  * connect() завершается, когда сервер принял игрока (сообщение joined).
+ * Если сервер сам отказал (комнаты нет, она занята), у ошибки refused = true:
+ * повторять такое подключение бессмысленно, в отличие от оборванной связи.
  */
 export class RoomConnection {
   constructor(apiBase, code, handlers) {
@@ -59,10 +61,10 @@ export class RoomConnection {
   connect() {
     return new Promise((resolve, reject) => {
       let settled = false;
-      const fail = (text) => {
+      const fail = (text, refused = false) => {
         if (settled) return;
         settled = true;
-        reject(new Error(text));
+        reject(Object.assign(new Error(text), { refused }));
       };
       const started = Date.now();
       let timer = null;
@@ -88,7 +90,7 @@ export class RoomConnection {
             resolve(msg);
           } else if (msg.t === 'error') {
             clearTimeout(timer);
-            fail(msg.text);
+            fail(msg.text, true);
             return;
           }
         }
