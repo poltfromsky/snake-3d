@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { ACHIEVEMENTS } from '../src/achievements.js';
-import { ICONS } from '../src/ui/icons.js';
+import { existsSync } from 'node:fs';
+
+import { ACHIEVEMENTS, medalUrl } from '../src/achievements.js';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -45,7 +46,7 @@ test('в интерфейсе нет эмодзи — только свои ик
   assert.deepEqual(found, []);
 });
 
-test('у каждого достижения свой значок из набора иконок', () => {
-  for (const a of ACHIEVEMENTS) assert.ok(ICONS[a.icon], `${a.id}: нет иконки «${a.icon}»`);
-  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.icon)).size, ACHIEVEMENTS.length, 'значки не повторяются');
+test('у каждого достижения своя медаль-картинка', () => {
+  for (const a of ACHIEVEMENTS) assert.ok(existsSync(join(ROOT, medalUrl(a.id))), `${a.id}: нет файла медали`);
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => medalUrl(a.id))).size, ACHIEVEMENTS.length, 'медали не повторяются');
 });

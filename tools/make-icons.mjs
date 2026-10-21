@@ -1,39 +1,27 @@
 /**
- * PNG-иконки приложения из assets/icons/icon.svg — тем же Chromium, что и в автотестах,
- * без отдельных графических библиотек. Запуск после правки SVG: `npm run icons`.
- *   icon-192 / icon-512      — обычные (Android, компьютер);
- *   icon-maskable-512        — змейка в безопасной зоне: Android сам обрезает в круг или «капельку»;
- *   apple-touch-icon (180)   — iPhone, без прозрачности (iOS сам скругляет углы).
+ * Значки приложения и медали достижений — 3D-рендером самой игры (tools/render-art.mjs, сцены
+ * в tools/art/scenes.js). Запуск после правки сцен: `npm run icons`.
+ *
+ *   assets/icons/icon-512, icon-192 — обычные (Android, компьютер, значок вкладки);
+ *   assets/icons/icon-maskable-512  — для Android: система сама обрезает в круг или «капельку»,
+ *                                     поэтому голова змейки меньше и целиком в безопасной зоне;
+ *   assets/icons/apple-touch-icon   — iPhone (180×180, углы скругляет сама система);
+ *   assets/medals/<id>.png          — медали достижений (192×192 — чётко на экранах с высокой плотностью).
  */
-import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { chromium } from '@playwright/test';
 
-const DIR = resolve(import.meta.dirname, '../assets/icons');
-const svg = await readFile(resolve(DIR, 'icon.svg'), 'utf8');
-// Квадратным иконкам — фон без скругления: углы скруглит сама система.
-const toDataUrl = (text) => `data:image/svg+xml;base64,${Buffer.from(text).toString('base64')}`;
-const roundUrl = toDataUrl(svg);
-const squareUrl = toDataUrl(svg.replace('rx="112"', 'rx="0"'));
-// Маскируемая: фон на всю площадь, змейка уменьшена до безопасной зоны (80% в центре).
-const maskableUrl = toDataUrl(svg.replace('rx="112"', 'rx="0"')
-  .replace('<g id="fg">', '<g id="fg" transform="translate(51.2 51.2) scale(0.8)">'));
+const ROOT = resolve(import.meta.dirname, '..');
+const render = (out, size, ...scenes) => execFileSync(
+  process.execPath,
+  [resolve(ROOT, 'tools/render-art.mjs'), '--out', resolve(ROOT, out), '--size', String(size), ...scenes],
+  { stdio: 'inherit' },
+);
 
-const ICONS = [
-  { file: 'icon-192.png', size: 192, url: roundUrl, round: true },
-  { file: 'icon-512.png', size: 512, url: roundUrl, round: true },
-  { file: 'icon-maskable-512.png', size: 512, url: maskableUrl, round: false },
-  { file: 'apple-touch-icon.png', size: 180, url: squareUrl, round: false },
-];
-
-const browser = await chromium.launch();
-const page = await browser.newPage();
-for (const { file, size, url, round } of ICONS) {
-  await page.setViewportSize({ width: size, height: size });
-  await page.setContent(`<html><body style="margin:0;background:transparent">
-    <img src="${url}" style="display:block;width:${size}px;height:${size}px"></body></html>`);
-  await page.locator('img').evaluate((img) => img.decode());
-  await page.screenshot({ path: resolve(DIR, file), omitBackground: round });
-  console.log(`✔ ${file}`);
-}
-await browser.close();
+render('assets/icons', 512, 'app-icon:icon-512', 'app-icon-maskable:icon-maskable-512');
+render('assets/icons', 192, 'app-icon:icon-192');
+render('assets/icons', 180, 'app-icon:apple-touch-icon');
+render('assets/medals', 192,
+  'first-steps', 'beat-claude', 'ouroboros', 'hall-of-fame',
+  // Ужик, Гадюка и Анаконда — выбранные варианты из нескольких (сцены beat-easy-N, beat-medium-N, beat-hard-N).
+  'beat-easy-2:beat-easy', 'beat-medium-5:beat-medium', 'beat-hard-3:beat-hard');

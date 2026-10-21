@@ -1,5 +1,6 @@
 /** Экран «Достижения» и кубки на кнопках побеждённых ботов. */
 import { $ } from './dom.js';
+import { medalUrl } from '../achievements.js';
 import { iconSvg } from './icons.js';
 
 function formatDate(ts) {
@@ -18,7 +19,13 @@ export function renderAchievements(book) {
     li.className = `${a.rarity}${a.unlockedAt ? '' : ' locked'}`;
     const icon = document.createElement('div');
     icon.className = 'achievement-icon';
-    icon.append(iconSvg(a.unlockedAt ? a.icon : 'lock'));
+    // Медаль видна и у закрытого достижения — серой, с замком: понятно, к чему стремиться.
+    const medal = document.createElement('img');
+    medal.className = 'medal';
+    medal.src = medalUrl(a.id);
+    medal.alt = '';
+    icon.append(medal);
+    if (!a.unlockedAt) icon.append(iconSvg('lock', 'icon medal-lock'));
     const title = document.createElement('b');
     title.textContent = a.title;
     const desc = document.createElement('span');
@@ -31,6 +38,16 @@ export function renderAchievements(book) {
 /** Кубок на кнопках ботов, которых игрок уже победил. */
 export function renderBotButtons(book) {
   for (const b of document.querySelectorAll('.bot-btn')) {
-    b.classList.toggle('beaten', book.has(`beat-${b.dataset.level}`));
+    const beaten = book.has(`beat-${b.dataset.level}`);
+    b.classList.toggle('beaten', beaten);
+    const mark = b.querySelector('.beaten-mark');
+    if (beaten && !mark) {
+      const span = document.createElement('span');
+      span.className = 'beaten-mark';
+      span.append(iconSvg('trophy'));
+      b.append(span);
+    } else if (!beaten && mark) {
+      mark.remove();
+    }
   }
 }

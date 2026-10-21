@@ -32,6 +32,7 @@ const list = [
   'index.html', 'styles.css', 'manifest.webmanifest', 'changelog.json',
   ...await files('src', (name) => name.endsWith('.js')),
   ...await files('assets/icons', (name) => /\.(png|svg)$/.test(name)),
+  ...await files('assets/medals', (name) => name.endsWith('.png')),
 ].sort();
 
 const path = join(ROOT, 'sw.js');

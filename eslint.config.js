@@ -25,8 +25,8 @@ export default [
     },
   },
   {
-    // Игра в браузере.
-    files: ['src/**/*.js'],
+    // Игра в браузере и студия картинок (tools/art — страница, которую открывает render-art.mjs).
+    files: ['src/**/*.js', 'tools/art/**/*.js'],
     languageOptions: { globals: { ...globals.browser } },
   },
   {

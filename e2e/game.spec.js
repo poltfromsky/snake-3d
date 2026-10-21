@@ -67,14 +67,20 @@ test('против бота: победа над Ужиком даёт дост�
   const toast = page.locator('.achievement-toast');
   await expect(toast).toContainText('Достижение получено');
   await expect(toast).toContainText('Ужик, прости');
+  await expect(toast.locator('img.medal')).toHaveAttribute('src', 'assets/medals/beat-easy.png');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('snake3d.achievements.v1')));
   expect(Object.keys(stored)).toEqual(['beat-easy']);
 
   await page.locator('#screen-duel [data-action="leave"]').click();
   await expect(page.locator('.bot-btn[data-level="easy"]')).toHaveClass(/beaten/);
+  await expect(page.locator('.bot-btn[data-level="easy"] .beaten-mark svg')).toHaveCount(1); // кубок — иконка
   await expect(page.locator('.bot-btn[data-level="claude"]')).not.toHaveClass(/beaten/);
   await page.locator('[data-action="achievements"]').click();
-  await expect(page.locator('#achievements-progress')).toHaveText('Открыто 1 из 6');
+  await expect(page.locator('#achievements-progress')).toHaveText('Открыто 1 из 7');
+  // Медали загрузились (картинка есть), закрытые — с замком.
+  await expect.poll(() => page.locator('#achievements-list img.medal')
+    .evaluateAll((imgs) => imgs.length === 7 && imgs.every((i) => i.complete && i.naturalWidth > 0))).toBe(true);
+  await expect(page.locator('#achievements-list li.locked .medal-lock')).toHaveCount(6);
   expect(errors).toEqual([]);
 });
 

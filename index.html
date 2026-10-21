@@ -8,7 +8,7 @@
   <!-- Приложение на экране «Домой» (PWA): Android, iPhone, компьютер. -->
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#070b18">
-  <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -39,7 +39,7 @@
     <div class="hud-stat hidden" id="hud-timer-box"><span>Время</span><b id="hud-timer">1:30</b></div>
     <div id="hud-effects" class="hud-effects"></div>
     <!-- Иконки — свои SVG, а не символы шрифта: ◀ ▶ некоторые браузеры (Яндекс на Samsung) рисуют как эмодзи. -->
-    <button id="btn-pause" class="icon-btn" aria-label="Пауза"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"/></svg></button>
+    <button id="btn-pause" class="icon-btn" aria-label="Пауза"><span class="ic-only" data-icon="pause"></span></button>
   </header>
   <div id="toast" class="toast" aria-live="polite"></div>
   <!-- Обучение: задание поверх игры. -->
@@ -57,10 +57,10 @@
   <div id="first-hint" class="first-hint hidden" role="status" aria-live="polite"></div>
   <!-- Кнопки-стрелки для телефона (включаются в настройках вместо свайпов). -->
   <div id="dpad" class="dpad hidden" aria-label="Кнопки управления">
-    <button data-dir="UP" aria-label="Вверх"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(0deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
-    <button data-dir="LEFT" aria-label="Влево"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(-90deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
-    <button data-dir="RIGHT" aria-label="Вправо"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(90deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
-    <button data-dir="DOWN" aria-label="Вниз"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="transform: rotate(180deg)"><path d="M12 5 20 18H4Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+    <button data-dir="UP" aria-label="Вверх"><span class="ic-only" data-icon="triangle" style="transform: rotate(0deg)"></span></button>
+    <button data-dir="LEFT" aria-label="Влево"><span class="ic-only" data-icon="triangle" style="transform: rotate(-90deg)"></span></button>
+    <button data-dir="RIGHT" aria-label="Вправо"><span class="ic-only" data-icon="triangle" style="transform: rotate(90deg)"></span></button>
+    <button data-dir="DOWN" aria-label="Вниз"><span class="ic-only" data-icon="triangle" style="transform: rotate(180deg)"></span></button>
   </div>
   <div id="achievement-toasts" class="achievement-toasts" aria-live="polite"></div>
 
@@ -99,8 +99,8 @@
         <span class="duo-title">Против бота</span>
         <div class="bot-grid">
           <button class="btn bot-btn" data-action="bot" data-level="easy"><b>Ужик</b><small>лёгкий</small></button>
-          <button class="btn bot-btn" data-action="bot" data-level="medium"><b>Гадюка</b><small>средний</small></button>
-          <button class="btn bot-btn" data-action="bot" data-level="hard"><b>Анаконда</b><small>сложный</small></button>
+          <button class="btn bot-btn rare" data-action="bot" data-level="medium"><b>Гадюка</b><small>средний</small></button>
+          <button class="btn bot-btn epic" data-action="bot" data-level="hard"><b>Анаконда</b><small>сложный</small></button>
           <button class="btn bot-btn legendary" data-action="bot" data-level="claude"><b>Claude</b><small>сильнейший</small></button>
         </div>
       </div>

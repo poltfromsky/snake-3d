@@ -5,7 +5,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { openGame, waitForGame } from './helpers.js';
+import { collectErrors, openGame, waitForGame } from './helpers.js';
 
 const VERSION = (page) => page.locator('#app-version').textContent().then((t) => t.replace('Версия ', ''));
 
@@ -82,4 +82,25 @@ test('на экранах нет эмодзи — только свои икон
   expect(emoji).toEqual([]);
   await expect(page.locator('#tutorial-banner svg')).toHaveCount(1);
   await expect(page.locator('#achievements-list .achievement-icon svg').first()).toBeVisible();
+});
+
+test('игрок со старой версии (до «Что нового») тоже видит, что изменилось', async ({ page }) => {
+  // Настройки и обучение есть (играл раньше), а запомненной версии нет — так было до 1.8.0.
+  const errors = await openGame(page);
+  await page.evaluate(() => localStorage.removeItem('snake3d.seen-version.v1'));
+  await page.reload();
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E));
+  await expect(page.locator('#screen-whats-new')).toBeVisible();
+  await expect(page.locator('#whats-new-list')).toContainText('Версия 1.8.0');
+  await expect(page.locator('#whats-new-list')).not.toContainText('Версия 1.7.2');
+  expect(errors).toEqual([]);
+});
+
+test('совсем новому игроку окно «Что нового» не показывается', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/?e2e');
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E));
+  await page.waitForTimeout(1500);
+  await expect(page.locator('#screen-whats-new')).toBeHidden();
+  expect(errors).toEqual([]);
 });

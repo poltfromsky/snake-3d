@@ -1,6 +1,8 @@
 /** Общее для браузерных сценариев: открыть игру с настройками и собрать ошибки страницы. */
 import { expect } from '@playwright/test';
 
+import { APP_VERSION } from '../src/config.js';
+
 export const BASE_SETTINGS = {
   musicVolume: 0, sfxVolume: 0, speed: 'normal', theme: 'neon', camera: 'angled', mode: 'walls',
 };
@@ -29,13 +31,15 @@ const TUTORIAL_DONE = {
 /**
  * Настройки — только в чистое хранилище: после перезагрузки остаётся то, что сохранила игра.
  * tutorial: false — как у игрока, который обучение ещё не проходил.
+ * Игрок уже видел «Что нового» текущей версии — окно не мешает остальным сценариям.
  */
 async function seedSettings(page, { tutorial = true, ...settings } = {}) {
-  await page.addInitScript(({ s, t }) => {
+  await page.addInitScript(({ s, t, v }) => {
     if (localStorage.getItem('snake3d.settings.v1')) return;
     localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
+    localStorage.setItem('snake3d.seen-version.v1', JSON.stringify(v));
     if (t) localStorage.setItem('snake3d.tutorial.v1', JSON.stringify(t));
-  }, { s: { ...BASE_SETTINGS, ...settings }, t: tutorial ? TUTORIAL_DONE : null });
+  }, { s: { ...BASE_SETTINGS, ...settings }, t: tutorial ? TUTORIAL_DONE : null, v: APP_VERSION });
 }
 
 /**

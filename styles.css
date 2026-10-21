@@ -1,5 +1,4 @@
 :root {
-  --icon-trophy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3.5h8v5a4 4 0 0 1-8 0Z'/%3E%3Cpath d='M8 5.5H5a3 3 0 0 0 3 4M16 5.5h3a3 3 0 0 1-3 4'/%3E%3Cpath d='M12 12.5V17M8.5 20.5h7M10 17h4v3.5h-4Z'/%3E%3C/svg%3E");
   --bg: #070b18;
   --panel: rgba(14, 20, 40, 0.95);
   --panel-border: rgba(120, 160, 255, 0.18);
@@ -637,21 +636,29 @@ kbd {
 
 .bot-btn b { font-size: 14px; }
 .bot-btn small { font-size: 11px; font-weight: 400; color: var(--muted); }
+/* Кнопки ботов — та же лестница, что у медалей: синий, рубин, золото. */
+.bot-btn.rare { border-color: rgba(127, 176, 255, 0.4); }
+.bot-btn.rare b { color: #a9c8ff; }
+.bot-btn.epic { border-color: rgba(255, 92, 120, 0.45); }
+.bot-btn.epic b { color: #ff9aac; }
 .bot-btn.legendary { border-color: rgba(255, 200, 80, 0.45); }
 .bot-btn.legendary b { color: #ffd166; }
 
 /* Кубок — своя иконка (маска из SVG), цвет — золото легендарных достижений. */
-.bot-btn.beaten::after {
-  content: '';
+.bot-btn .beaten-mark {
   position: absolute;
   top: -8px;
   right: -6px;
-  width: 18px;
-  height: 18px;
-  background: #ffd166;
-  -webkit-mask: var(--icon-trophy) center / contain no-repeat;
-  mask: var(--icon-trophy) center / contain no-repeat;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: #ffd166;
+  background: var(--bg);
+  border: 1px solid rgba(255, 209, 102, 0.6);
+  border-radius: 50%;
 }
+.bot-btn .beaten-mark .icon { width: 13px; height: 13px; margin: 0; }
 
 @media (max-width: 520px) {
   .bot-grid { grid-template-columns: repeat(2, 1fr); }
@@ -662,7 +669,7 @@ kbd {
 
 .achievements li {
   display: grid;
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 60px 1fr;
   gap: 2px 12px;
   align-items: center;
   padding: 10px;
@@ -674,23 +681,43 @@ kbd {
 .achievements li .achievement-icon { grid-row: span 2; }
 .achievements li b { font-size: 15px; }
 .achievements li span { font-size: 12px; color: var(--muted); }
-.achievements li.locked { opacity: 0.45; }
-.achievements li.locked .achievement-icon { filter: grayscale(1); }
+.achievements li.locked b, .achievements li.locked span { opacity: 0.6; }
+.achievements li.locked .medal { filter: grayscale(1) brightness(0.55); }
+.achievements li.rare:not(.locked) { border-color: rgba(127, 176, 255, 0.45); }
+.achievements li.epic:not(.locked) { border-color: rgba(255, 92, 120, 0.5); }
+.achievements li.mythic:not(.locked) { border-color: rgba(206, 170, 255, 0.6); box-shadow: inset 0 0 24px rgba(180, 140, 255, 0.12); }
 .achievements li.legendary:not(.locked) { border-color: rgba(255, 200, 80, 0.5); }
 
 .achievement-icon {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 60px;
+  height: 60px;
+  overflow: hidden;
   font-size: 26px;
   border-radius: 10px;
   background: linear-gradient(135deg, #2b3550, #1a2036);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.legendary .achievement-icon { background: linear-gradient(135deg, #5a4210, #2b1d05); box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.5); }
-.rare .achievement-icon { background: linear-gradient(135deg, #2a2f6b, #161a3d); box-shadow: inset 0 0 0 1px rgba(140, 150, 255, 0.4); }
+.legendary .achievement-icon { box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.5); }
+.rare .achievement-icon { box-shadow: inset 0 0 0 1px rgba(140, 150, 255, 0.4); }
+.mythic .achievement-icon { box-shadow: inset 0 0 0 1px rgba(206, 170, 255, 0.6); }
+.epic .achievement-icon { box-shadow: inset 0 0 0 1px rgba(255, 92, 120, 0.55); }
+/* Медаль — 3D-картинка из рендера игры; закрытая — серая, с замком в углу. */
+.achievement-icon .medal { display: block; width: 100%; height: 100%; object-fit: cover; }
+.achievement-icon .icon.medal-lock {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 3px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+}
 
 /* ---------- Достижения: всплывашка как в Steam ---------- */
 .achievement-toasts {
@@ -727,6 +754,11 @@ kbd {
 .achievement-text b { font-size: 15px; }
 .achievement-text span { font-size: 12px; color: #b9c2de; }
 .achievement-toast.legendary .achievement-text b { color: #ffd166; }
+.achievement-toast.rare { border-color: rgba(127, 176, 255, 0.55); }
+.achievement-toast.epic { border-color: rgba(255, 92, 120, 0.65); box-shadow: 0 0 30px rgba(255, 70, 100, 0.22), 0 12px 30px rgba(0, 0, 0, 0.5); }
+.achievement-toast.epic .achievement-text b { color: #ff8fa3; }
+.achievement-toast.mythic { border-color: rgba(206, 170, 255, 0.7); box-shadow: 0 0 34px rgba(180, 140, 255, 0.3), 0 12px 30px rgba(0, 0, 0, 0.5); }
+.achievement-toast.mythic .achievement-text b { color: #d9c2ff; }
 
 @media (prefers-reduced-motion: reduce) {
   .achievement-toast { transition: none; }
@@ -826,7 +858,8 @@ kbd {
 .ic .icon, .record-auto-title .icon, .records b .icon, .effect .icon { display: inline-block; width: 1.1em; height: 1.1em; margin: 0; vertical-align: -0.2em; }
 .record-auto-title .icon, .records b .icon { margin-right: 0.3em; }
 .achievement-icon .icon { width: 60%; height: 60%; }
-.dpad button .icon { width: 26px; height: 26px; }
+.ic-only { display: grid; place-items: center; }
+.dpad button .icon { width: 24px; height: 24px; }
 #btn-pause .icon { width: 18px; height: 18px; }
 
 /* Подсветку включает и снимает src/ui/dpad.js: :active на некоторых телефонах залипает после отпускания. */

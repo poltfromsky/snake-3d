@@ -6,6 +6,11 @@
 - [Wrangler](https://developers.cloudflare.com/workers/wrangler/) — Apache-2.0 / MIT. Инструмент Cloudflare для запуска и выкладки сервера (только для разработки, в игру не входит).
 - Шрифты [Unbounded](https://fonts.google.com/specimen/Unbounded) и [Inter](https://fonts.google.com/specimen/Inter) — SIL Open Font License. Загружаются с Google Fonts.
 
+## Иконки
+
+- [Phosphor Icons](https://phosphoricons.com) 2.1.1 (пакет `@phosphor-icons/core`, толщина bold) — MIT License, Copyright (c) 2023 Phosphor Icons. Иконки встроены в `src/ui/icons.js` скриптом `tools/build-icons.mjs`; текст лицензии — в шапке этого файла. Пакет нужен только для сборки, в игру не загружается.
+- Значок приложения и медали достижений нарисованы 3D-рендером самой игры (`tools/render-art.mjs`, сцены в `tools/art/scenes.js`).
+
 ## Звук
 
 - Звуковые эффекты синтезируются в коде (Web Audio API), файлы не используются.

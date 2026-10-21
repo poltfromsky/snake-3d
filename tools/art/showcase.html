@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Витрина картинок</title>
+  <!-- Витрина всех картинок игры для проверки перед выкладкой. Открыть: npm start → /tools/art/showcase.html -->
+  <link rel="stylesheet" href="../../styles.css">
+  <style>
+    html, body { height: auto; overflow: auto; }
+    body { padding: 24px 16px 60px; }
+    main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+    h1 { margin: 0; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    .card { padding: 18px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); }
+    .row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+    figure { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+    .ios { border-radius: 22.5%; }
+    .circle { border-radius: 50%; }
+    .home { display: flex; gap: 18px; padding: 16px; background: linear-gradient(135deg, #3a2a6b, #0c3b4a); border-radius: 18px; }
+    .home figure { color: #fff; }
+    .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+    .icons div { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 6px; background: rgba(0, 0, 0, 0.25); border-radius: 12px; font-size: 12px; color: var(--muted); }
+    .icons svg { width: 28px; height: 28px; color: var(--text); }
+    .sizes { display: flex; gap: 12px; align-items: center; color: var(--text); }
+    .sizes svg:nth-child(1) { width: 16px; height: 16px; }
+    .sizes svg:nth-child(2) { width: 24px; height: 24px; }
+    .sizes svg:nth-child(3) { width: 40px; height: 40px; }
+    .achievements { max-width: 420px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Витрина картинок</h1>
+
+    <section class="card">
+      <h2>Значок приложения — рендер самой игры</h2>
+      <div class="row">
+        <figure><img class="ios" src="../../assets/icons/icon-512.png" width="180" height="180" alt="">iPhone / компьютер</figure>
+        <figure><img class="circle" src="../../assets/icons/icon-maskable-512.png" width="140" height="140" alt="">Android (круг)</figure>
+        <figure><img src="../../assets/icons/icon-192.png" width="64" height="64" class="ios" alt="">64 px</figure>
+        <figure><img src="../../assets/icons/icon-192.png" width="32" height="32" alt="">вкладка</figure>
+      </div>
+      <div class="home" style="margin-top:16px">
+        <figure><img class="ios" src="../../assets/icons/apple-touch-icon.png" width="60" height="60" alt="">Изгиб Питона</figure>
+        <figure><div class="ios" style="width:60px;height:60px;background:#2c7be5"></div>Почта</figure>
+        <figure><div class="ios" style="width:60px;height:60px;background:#34c759"></div>Сообщения</figure>
+        <figure><div class="ios" style="width:60px;height:60px;background:#ff9500"></div>Музыка</figure>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Медали достижений — так они выглядят в игре</h2>
+      <ul class="achievements" id="medals"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Иконки интерфейса — Phosphor Icons</h2>
+      <div class="icons" id="icons"></div>
+    </section>
+
+    <section class="card">
+      <h2>Значки платформы в таблице рекордов</h2>
+      <ol class="records" id="platforms"></ol>
+    </section>
+  </main>
+
+  <script type="module">
+    import { ACHIEVEMENTS, medalUrl } from '../../src/achievements.js';
+    import { ICONS, iconSvg } from '../../src/ui/icons.js';
+    import { PLATFORM_ICONS } from '../../src/ui/records-screen.js';
+
+    // Медали: открытые и последняя — закрытая, как в игре.
+    const list = document.getElementById('medals');
+    ACHIEVEMENTS.forEach((a, i) => {
+      const locked = i === ACHIEVEMENTS.length - 1;
+      const li = document.createElement('li');
+      li.className = `${a.rarity}${locked ? ' locked' : ''}`;
+      const box = document.createElement('div');
+      box.className = 'achievement-icon';
+      const img = document.createElement('img');
+      img.className = 'medal';
+      img.src = `../../${medalUrl(a.id)}`;
+      box.append(img);
+      if (locked) box.append(iconSvg('lock', 'icon medal-lock'));
+      const title = document.createElement('b');
+      title.textContent = `${a.title}${locked ? ' (закрыто)' : ''}`;
+      const desc = document.createElement('span');
+      desc.textContent = `${a.description} · ${a.rarity}`;
+      li.append(box, title, desc);
+      list.append(li);
+    });
+
+    // Все иконки набора в трёх размерах.
+    const grid = document.getElementById('icons');
+    for (const name of Object.keys(ICONS)) {
+      const cell = document.createElement('div');
+      const sizes = document.createElement('span');
+      sizes.className = 'sizes';
+      sizes.append(iconSvg(name), iconSvg(name), iconSvg(name));
+      cell.append(sizes, name);
+      grid.append(cell);
+    }
+
+    // Строки таблицы рекордов со значками платформ.
+    const rows = [['Удав', 310, 'pc'], ['Кобра', 240, 'touch'], ['Полоз', 205, 'buttons']];
+    const ol = document.getElementById('platforms');
+    for (const [name, score, platform] of rows) {
+      const li = document.createElement('li');
+      const nick = document.createElement('span');
+      const icon = iconSvg(PLATFORM_ICONS[platform].icon, 'icon platform-icon');
+      nick.append(icon, name);
+      const b = document.createElement('b');
+      b.textContent = score;
+      const small = document.createElement('small');
+      small.textContent = PLATFORM_ICONS[platform].label;
+      li.append(nick, b, small);
+      ol.append(li);
+    }
+  </script>
+</body>
+</html>

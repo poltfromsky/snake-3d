@@ -47,3 +47,30 @@ test('испорченное хранилище не ломает игру', () 
   const book = new AchievementBook(broken);
   assert.equal(book.recordBotWin('easy').length, 1);
 });
+
+test('«Зал славы» открывается, когда собраны все остальные достижения, и только тогда', () => {
+  const book = new AchievementBook(memoryStorage());
+  for (const bot of BOT_ORDER) book.recordBotWin(bot);
+  assert.ok(book.has('ouroboros'));
+  assert.equal(book.has('hall-of-fame'), false, 'обучение ещё не пройдено');
+  const fresh = book.award('first-steps').map((a) => a.id);
+  assert.deepEqual(fresh, ['first-steps', 'hall-of-fame']);
+  assert.deepEqual(book.award('first-steps'), [], 'второй раз ничего не открывается');
+  assert.equal(ACHIEVEMENTS.find((a) => a.id === 'hall-of-fame').rarity, 'mythic');
+});
+
+test('если обучение пройдено первым, «Зал славы» открывается вместе с последним ботом', () => {
+  const book = new AchievementBook(memoryStorage());
+  book.award('first-steps');
+  for (const bot of ['easy', 'medium', 'hard']) book.recordBotWin(bot);
+  assert.deepEqual(book.recordBotWin('claude').map((a) => a.id), ['beat-claude', 'ouroboros', 'hall-of-fame']);
+});
+
+test('медали ботов: чем сложнее бот, тем ценнее редкость — прогресс виден по ободу', async () => {
+  const { RARITIES } = await import('../src/achievements.js');
+  const rank = (id) => RARITIES.indexOf(ACHIEVEMENTS.find((a) => a.id === id).rarity);
+  const ladder = BOT_ORDER.map((bot) => rank(`beat-${bot}`));
+  for (let i = 1; i < ladder.length; i += 1) assert.ok(ladder[i] > ladder[i - 1], `${BOT_ORDER[i]} ценнее ${BOT_ORDER[i - 1]}`);
+  assert.ok(ACHIEVEMENTS.every((a) => RARITIES.includes(a.rarity)), 'у всех известная редкость');
+  assert.equal(rank('hall-of-fame'), RARITIES.length - 1, '«Зал славы» — самая ценная');
+});

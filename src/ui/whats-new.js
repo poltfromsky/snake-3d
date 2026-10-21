@@ -13,6 +13,12 @@ import { changesSince, compareVersions, latestVersion } from '../core/versions.j
 import { loadSeenVersion, saveSeenVersion } from '../storage.js';
 import { $ } from './dom.js';
 
+/**
+ * Последняя версия без «Что нового». Игроки, пришедшие с неё и раньше, не имеют сохранённой
+ * «виденной версии» — им показываем изменения начиная со следующей.
+ */
+export const BEFORE_WHATS_NEW = '1.7.2';
+
 const dateText = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
 /**
@@ -89,13 +95,18 @@ export function createWhatsNew({ version, open }) {
       $('#btn-whats-new-update').classList.remove('hidden');
     },
 
-    /** При запуске: если игра обновилась с прошлого раза — один раз показать, что нового. */
-    async afterStart({ canShow }) {
-      const seen = loadSeenVersion();
-      if (!seen) {
+    /**
+     * При запуске: если игра обновилась с прошлого раза — один раз показать, что нового.
+     * returning — у игрока уже были настройки, рекорды или обучение (он играл раньше).
+     */
+    async afterStart({ canShow, returning = false }) {
+      let seen = loadSeenVersion();
+      if (!seen && !returning) {
         markSeen(); // новый игрок: показывать «что изменилось» не с чем
         return;
       }
+      // Играл раньше, но версия не запомнена — пришёл с версии, где «Что нового» ещё не было.
+      if (!seen) seen = BEFORE_WHATS_NEW;
       if (compareVersions(version, seen) <= 0) return;
       $('#whats-new-dot').classList.remove('hidden');
       if (!canShow()) return; // идёт обучение или вход по ссылке — не мешаем, точка в меню останется

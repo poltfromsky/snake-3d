@@ -2,7 +2,7 @@
  * Всплывающее «Достижение получено» в правом нижнем углу, как в Steam.
  * Несколько достижений подряд показываются по очереди.
  */
-import { iconSvg } from './icons.js';
+import { medalUrl } from '../achievements.js';
 
 const SHOW_MS = 5000;
 const GAP_MS = 400;
@@ -36,7 +36,11 @@ export class AchievementToasts {
     el.setAttribute('role', 'status');
     const icon = document.createElement('div');
     icon.className = 'achievement-icon';
-    icon.append(iconSvg(a.icon));
+    const medal = document.createElement('img');
+    medal.className = 'medal';
+    medal.src = medalUrl(a.id);
+    medal.alt = '';
+    icon.append(medal);
     const text = document.createElement('div');
     text.className = 'achievement-text';
     const label = document.createElement('small');

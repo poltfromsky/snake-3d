@@ -76,7 +76,7 @@ const leaderboard = new Leaderboard(API_BASE);
 const achievements = new AchievementBook();
 const achievementToasts = new AchievementToasts(
   $('#achievement-toasts'),
-  (rarity) => audio.play(rarity === 'legendary' ? 'achievementLegendary' : 'achievement'),
+  (rarity) => audio.play(rarity === 'legendary' || rarity === 'mythic' ? 'achievementLegendary' : 'achievement'),
 );
 
 const wakeLock = new WakeLock();
@@ -311,8 +311,8 @@ function finishTutorial() {
   app.go(OVER);
   audio.play('record');
   show('tutorial-done');
-  const fresh = achievements.unlock('first-steps');
-  if (fresh) setTimeout(() => achievementToasts.show(fresh), 400);
+  const fresh = achievements.award('first-steps');
+  if (fresh.length) setTimeout(() => fresh.forEach((a) => achievementToasts.show(a)), 400);
 }
 
 /**
@@ -773,6 +773,6 @@ if (invited) {
   startTutorial();
 }
 // Игра обновилась с прошлого раза — один раз показать, что нового (только поверх меню).
-whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu' });
+whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu', returning: !firstVisit });
 
 requestAnimationFrame(frame);
