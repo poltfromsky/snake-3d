@@ -6,7 +6,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  gameState, openGame, openGameFromLink, waitForGame,
+  attachNetProbe, gameState, openGame, openGameFromLink, readNetProbe, waitForGame,
 } from './helpers.js';
 
 test('одиночная игра: удар о стену → экран «Игра окончена»', async ({ page }) => {
@@ -89,6 +89,8 @@ test('онлайн: комната по ссылке, оба видят итог
   const guest = await browser.newContext();
   const a = await host.newPage();
   const b = await guest.newPage();
+  await attachNetProbe(a);
+  await attachNetProbe(b);
   const errorsA = await openGame(a, { playerName: 'Питон' });
   await a.locator('[data-action="online"]').click();
   await expect(a.locator('#online-name')).toHaveValue('Питон');
@@ -112,6 +114,8 @@ test('онлайн: комната по ссылке, оба видят итог
       online: globalThis.document.querySelector('#online-status')?.textContent,
     }));
     console.log('онлайн: хозяин', JSON.stringify(await where(a)), 'гость', JSON.stringify(await where(b)));
+    console.log('онлайн: журнал хозяина', JSON.stringify(await readNetProbe(a)));
+    console.log('онлайн: журнал гостя', JSON.stringify(await readNetProbe(b)));
     throw err;
   }
   // Каждый видит себя как «Вы», соперника — по нику (счёт зависит от съеденных яблок).

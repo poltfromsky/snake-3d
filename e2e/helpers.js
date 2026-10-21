@@ -91,3 +91,49 @@ export async function releaseFinger(page) {
     pointerId: 11, pointerType: 'touch', isPrimary: true, bubbles: true,
   })));
 }
+
+/**
+ * Журнал клиента для разбора онлайн-сбоев на CI: события WebSocket (без снимков поля),
+ * долгие задачи главного потока, паузы между кадрами и состояние игры раз в 2 с.
+ * Подключать до открытия страницы; читать — readNetProbe(page).
+ */
+export async function attachNetProbe(page) {
+  await page.addInitScript(() => {
+    const t0 = performance.now();
+    const log = [];
+    const at = () => Math.round(performance.now() - t0);
+    const push = (...entry) => { if (log.length < 400) log.push([at(), ...entry]); };
+    globalThis.__netProbe = log;
+    const Native = globalThis.WebSocket;
+    globalThis.WebSocket = class extends Native {
+      constructor(...args) {
+        super(...args);
+        push('ws-new');
+        this.addEventListener('open', () => push('ws-open'));
+        this.addEventListener('close', (e) => push('ws-close', e.code));
+        this.addEventListener('message', (e) => {
+          const text = String(e.data);
+          if (!text.startsWith('{"t":"state"')) push('msg', text.slice(0, 32));
+        });
+      }
+    };
+    try {
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (e.duration > 300) push('long-task', Math.round(e.duration));
+      }).observe({ type: 'longtask', buffered: true });
+    } catch {
+      // longtask есть только в Chromium
+    }
+    let last = performance.now();
+    const frame = () => {
+      const now = performance.now();
+      if (now - last > 1000) push('frame-gap', Math.round(now - last));
+      last = now;
+      globalThis.requestAnimationFrame(frame);
+    };
+    globalThis.requestAnimationFrame(frame);
+    setInterval(() => push('state', globalThis.__snakeE2E?.state ?? null, globalThis.document.visibilityState), 2000);
+  });
+}
+
+export const readNetProbe = (page) => page.evaluate(() => globalThis.__netProbe ?? []).catch(() => 'нет данных');
