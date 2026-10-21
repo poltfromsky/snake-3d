@@ -11,12 +11,19 @@ export function isStandalone() {
 }
 
 /**
- * iPhone или iPad. На iPad в режиме «как на компьютере» Safari называет себя Mac,
- * поэтому дополнительно смотрим на сенсорный экран.
+ * Как установить игру в этом браузере, если он не показал своё окно установки.
+ * ios — Safari на iPhone/iPad (на iPad в режиме «как на компьютере» Safari называет себя Mac —
+ * отличаем по сенсорному экрану); android — Chrome, Яндекс, Samsung на Android; firefox-android;
+ * desktop — Chrome, Edge, Яндекс, Opera на компьютере; safari-mac — Safari 17+ («Добавить в Dock»);
+ * firefox-desktop — Firefox на компьютере (устанавливать сайты не умеет); inapp — браузер внутри Telegram и т. п.
  */
-export function isIOS() {
-  const ua = navigator.userAgent;
-  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+export function installKind(ua = navigator.userAgent, touchPoints = navigator.maxTouchPoints ?? 0) {
+  if (/Telegram|FBAN|FBAV|Instagram|VKClient/i.test(ua)) return 'inapp';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1)) return 'ios';
+  if (/Android/.test(ua)) return /Firefox/.test(ua) ? 'firefox-android' : 'android';
+  if (/Firefox/.test(ua)) return 'firefox-desktop';
+  if (/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|YaBrowser|OPR/.test(ua)) return 'safari-mac';
+  return 'desktop';
 }
 
 /**

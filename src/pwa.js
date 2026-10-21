@@ -6,7 +6,7 @@
  * в фоне целиком и включается только по кнопке «Обновить» — старые и новые файлы
  * никогда не смешиваются, и не нужно чистить кэш браузера.
  */
-import { isIOS, isStandalone } from './ui/device.js';
+import { installKind, isStandalone } from './ui/device.js';
 
 /**
  * @param {object} hooks
@@ -68,25 +68,25 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
 }
 
 /**
- * Кнопка «Установить как приложение».
- * Chrome, Edge, Samsung Internet, Яндекс (Android и компьютер) дают системное окно установки.
- * Safari на iPhone такого окна не даёт — показываем инструкцию «Поделиться → На экран „Домой“».
+ * Кнопка «Установить как приложение» — видна всегда, пока игра открыта во вкладке браузера.
+ * Если браузер дал своё окно установки (Chrome, Edge, Samsung Internet, Яндекс), открываем его.
+ * Иначе — инструкция под этот браузер: Safari на iPhone такого окна не даёт вовсе, а Chrome
+ * после удаления приложения или отказа в окне надолго перестаёт его предлагать.
  * @param {object} hooks
  * @param {(visible: boolean) => void} hooks.setVisible показать или спрятать кнопку
- * @param {() => void} hooks.showIOSHelp открыть инструкцию для iPhone
+ * @param {(kind: string) => void} hooks.showHelp открыть инструкцию (вид — installKind())
  * @returns {{install(): Promise<void>}}
  */
-export function setupInstall({ setVisible, showIOSHelp }) {
+export function setupInstall({ setVisible, showHelp }) {
   let deferred = null;
   if (isStandalone()) {
     setVisible(false);
     return { install: async () => {} };
   }
-  setVisible(isIOS());
+  setVisible(true);
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault(); // своя кнопка в меню вместо баннера браузера поверх игры
     deferred = e;
-    setVisible(true);
   });
   window.addEventListener('appinstalled', () => {
     deferred = null;
@@ -99,8 +99,8 @@ export function setupInstall({ setVisible, showIOSHelp }) {
         const { outcome } = await deferred.userChoice.catch(() => ({ outcome: 'dismissed' }));
         if (outcome === 'accepted') setVisible(false);
         deferred = null;
-      } else if (isIOS()) {
-        showIOSHelp();
+      } else {
+        showHelp(installKind());
       }
     },
   };

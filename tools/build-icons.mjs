@@ -24,7 +24,7 @@ const ICONS = {
   share: ['export'], // «Поделиться» в Safari
   slow: ['hourglass-medium'], // замедление
   ghost: ['ghost'], // призрак
-  lock: ['lock-simple'], // достижение ещё не открыто
+  lock: ['lock-simple', 'fill'], // достижение ещё не открыто: закрашенный замок читается в мелком размере
   trophy: ['trophy'], // бот побеждён
   star: ['star', 'fill'], // лучший результат
   user: ['user'], // профиль

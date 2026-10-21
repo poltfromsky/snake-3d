@@ -53,3 +53,26 @@ test('без интернета игра открывается и в неё м�
     await context.setOffline(false);
   }
 });
+
+test('кнопка установки видна всегда: в меню и в настройках, а без окна браузера — инструкция под него', async ({ page }) => {
+  // Своё окно установки браузер может и не дать (Chrome после удаления приложения, Safari, Firefox) —
+  // как будто его нет: игра должна показать инструкцию.
+  await page.addInitScript(() => {
+    globalThis.addEventListener('beforeinstallprompt', (e) => e.stopImmediatePropagation(), { capture: true });
+  });
+  const errors = await openGame(page);
+  const menuButton = page.locator('#screen-menu [data-action="install"]');
+  await expect(menuButton).toBeVisible();
+  await menuButton.click();
+  await expect(page.locator('#screen-install')).toBeVisible();
+  await expect(page.locator('#screen-install ol.install-steps:visible')).toHaveCount(1);
+  await page.locator('[data-action="install-back"]').click();
+  await expect(page.locator('#screen-menu')).toBeVisible();
+
+  await page.locator('#screen-menu [data-action="settings"]').click();
+  await page.locator('#screen-settings [data-action="install"]').click();
+  await expect(page.locator('#screen-install')).toBeVisible();
+  await page.locator('[data-action="install-back"]').click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+  expect(errors).toEqual([]);
+});

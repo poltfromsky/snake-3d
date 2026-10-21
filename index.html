@@ -111,7 +111,7 @@
         <button class="btn" data-action="settings">Настройки</button>
       </div>
       <button class="btn link-btn online-only hidden" data-action="feedback"><span class="ic" data-icon="chat"></span>Оставить отзыв об игре</button>
-      <button class="btn link-btn hidden" id="btn-install" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
+      <button class="btn link-btn install-btn hidden" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
       <details class="howto" open>
         <summary>Как играть</summary>
         <button class="btn link-btn" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение — 1 минута</button>
@@ -237,17 +237,43 @@
     </div>
   </section>
 
-  <!-- Как установить на iPhone: Safari не показывает кнопку установки сам -->
+  <!-- Как установить игру, когда браузер не показал своё окно: инструкция под этот браузер (installKind) -->
   <section id="screen-install" class="screen hidden">
     <div class="panel small">
-      <h2>Игра на экране «Домой»</h2>
-      <p class="subtitle">Откроется на весь экран, без панелей браузера, и будет работать даже без интернета (одиночная игра).</p>
-      <ol class="install-steps">
+      <h2>Установить как приложение</h2>
+      <p class="subtitle">Игра откроется отдельным окном, без панелей браузера, и будет работать даже без интернета (одиночная игра).</p>
+      <ol class="install-steps" data-kind="ios">
         <li>Откройте игру в <b>Safari</b> (из Telegram: «⋯» → «Открыть в Safari»).</li>
         <li>Нажмите <b>«Поделиться»</b> <span class="ic" data-icon="share"></span> внизу экрана.</li>
         <li>Выберите <b>«На экран „Домой“»</b> и нажмите «Добавить».</li>
       </ol>
-      <button class="btn" data-action="back">Понятно</button>
+      <ol class="install-steps" data-kind="android">
+        <li>Откройте меню браузера — <b>⋮</b> справа вверху (в Яндексе — <b>≡</b> внизу).</li>
+        <li>Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.</li>
+        <li>Подтвердите — значок игры появится на главном экране.</li>
+      </ol>
+      <ol class="install-steps" data-kind="firefox-android">
+        <li>Откройте меню Firefox — <b>⋮</b>.</li>
+        <li>Выберите <b>«Добавить на главный экран»</b> и подтвердите.</li>
+      </ol>
+      <ol class="install-steps" data-kind="desktop">
+        <li>Справа в адресной строке нажмите значок установки <span class="ic" data-icon="install"></span> — если он есть.</li>
+        <li>Или откройте меню браузера (<b>⋮</b> или <b>≡</b>) и найдите пункт <b>«Установить…»</b>. В Chrome он лежит в разделе «Трансляция, сохранение и отправка».</li>
+        <li>Если пункта нет — обновите страницу и попробуйте снова: после удаления приложения браузер иногда предлагает установку не сразу.</li>
+      </ol>
+      <ol class="install-steps" data-kind="safari-mac">
+        <li>В меню Safari выберите <b>«Файл» → «Добавить в Dock»</b> (macOS Sonoma и новее).</li>
+        <li>Нажмите «Добавить» — игра появится в Dock и в Launchpad.</li>
+      </ol>
+      <ol class="install-steps" data-kind="firefox-desktop">
+        <li>Firefox на компьютере не умеет устанавливать сайты как приложения.</li>
+        <li>Откройте игру в <b>Chrome</b>, <b>Edge</b> или <b>Яндекс Браузере</b> и нажмите «Установить как приложение» там.</li>
+      </ol>
+      <ol class="install-steps" data-kind="inapp">
+        <li>Встроенный браузер Telegram и других приложений не устанавливает игры.</li>
+        <li>Откройте ссылку в обычном браузере: «⋯» → <b>«Открыть в браузере»</b> — и нажмите «Установить как приложение» там.</li>
+      </ol>
+      <button class="btn" data-action="install-back">Понятно</button>
     </div>
   </section>
 
@@ -470,6 +496,7 @@
       </div>
       <div class="field">Версия игры <b id="settings-version"></b>
         <button class="btn" data-action="whats-new">История обновлений</button>
+        <button class="btn install-btn hidden" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
       </div>
       <div class="field">Обучение
         <button class="btn" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение заново</button>

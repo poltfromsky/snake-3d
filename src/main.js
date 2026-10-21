@@ -93,6 +93,7 @@ let mode = createSolo();
 let replay = null; // как начать такую же партию заново (реванш)
 let screen = 'menu'; // какой оверлей сейчас виден (null — только игра)
 let backTo = 'menu'; // куда ведёт «Назад» с рекордов, настроек и т. п.
+let installFrom = 'menu'; // откуда открыли инструкцию по установке: меню или настройки
 let lastTime = performance.now();
 // Итог последней дуэли: ник соперника может прийти по сети позже конца партии
 // (медленный телефон, плохая связь) — тогда подписи перерисовываются.
@@ -696,7 +697,14 @@ const ACTIONS = {
     backTo = 'profile';
     show('achievements');
   },
-  install: () => installer.install(),
+  install: (e) => {
+    installFrom = e.target.closest('.screen')?.id.replace('screen-', '') || 'menu';
+    installer.install();
+  },
+  'install-back': () => {
+    if (installFrom === 'menu') toMenu();
+    else show(installFrom);
+  },
   'whats-new': () => whatsNew.showHistory(),
   update: () => updater.applyUpdate(),
   back: () => {
@@ -723,8 +731,11 @@ if (window.matchMedia('(max-width: 520px), (max-height: 700px)').matches) $('.ho
 
 // Игра как приложение: установка и обновления (src/pwa.js, sw.js).
 const installer = setupInstall({
-  setVisible: (visible) => $('#btn-install').classList.toggle('hidden', !visible),
-  showIOSHelp: () => openFromMenu('install'),
+  setVisible: (visible) => document.querySelectorAll('.install-btn').forEach((b) => b.classList.toggle('hidden', !visible)),
+  showHelp: (kind) => {
+    document.querySelectorAll('#screen-install [data-kind]').forEach((ol) => ol.classList.toggle('hidden', ol.dataset.kind !== kind));
+    show('install');
+  },
 });
 const whatsNew = createWhatsNew({ version: APP_VERSION, open: (name) => openFromMenu(name) });
 const updater = registerServiceWorker({
