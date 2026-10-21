@@ -380,6 +380,8 @@ test.describe('профиль с паролем', () => {
   };
 
   test('регистрация, код восстановления, «Мой профиль», вход с другого устройства и выход', async ({ page, browser }, testInfo) => {
+    // Пароль трижды считается в браузере (600 000 итераций), а на CI desktop-chrome рисует 3D без видеокарты — 60 с впритык.
+    test.setTimeout(120_000);
     const nick = `Проф${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
     const password = 'пароль-для-теста-1';
     const errors = await openGame(page, { playerName: nick });
