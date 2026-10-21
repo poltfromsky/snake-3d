@@ -12,6 +12,9 @@ const CONNECT_TIMEOUT_MS = 10000;
 // (тяжёлая загрузка на слабом телефоне). Тогда ждём дольше, но не бесконечно.
 const JOIN_WAIT_MS = 30000;
 const JOIN_RECHECK_MS = 2000;
+// Проверка сработала намного позже срока — значит, страница подвисала (3D и картинки грузятся
+// на слабом устройстве), и событие «соединение открыто» могло просто ещё не дойти. Не обрываем.
+const FROZEN_LAG_MS = 1500;
 
 export function normalizeRoomCode(raw) {
   return String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -67,10 +70,14 @@ export class RoomConnection {
         reject(Object.assign(new Error(text), { refused }));
       };
       const started = Date.now();
+      let due = started + CONNECT_TIMEOUT_MS;
       let timer = null;
       const check = () => {
         if (settled) return;
-        if (this.socket?.readyState === WebSocket.OPEN && Date.now() - started < JOIN_WAIT_MS) {
+        const now = Date.now();
+        const frozen = now - due > FROZEN_LAG_MS;
+        if (now - started < JOIN_WAIT_MS && (frozen || this.socket?.readyState === WebSocket.OPEN)) {
+          due = now + JOIN_RECHECK_MS;
           timer = setTimeout(check, JOIN_RECHECK_MS);
           return;
         }

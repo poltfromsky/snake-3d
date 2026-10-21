@@ -65,6 +65,27 @@ test('сервер принял соединение, а страница дол
   assert.deepEqual(await result, { ok: { t: 'joined', slot: 1, mode: 'walls', names: [null, null] } });
 });
 
+test('страница подвисла при загрузке — подключение не считается сорвавшимся', async () => {
+  const conn = new RoomConnection('http://localhost:8787', 'ABCDE', {});
+  const result = settle(conn.connect());
+  // Страница «замёрзла» на 14 секунд: проверка через 10 секунд срабатывает с опозданием,
+  // а событие «соединение открыто» ещё не дошло (так было на CI с тяжёлой 3D-загрузкой).
+  mock.timers.setTime(Date.now() + 14_000);
+  mock.timers.tick(0);
+  FakeSocket.last.open();
+  FakeSocket.last.receive({ t: 'joined', slot: 1, mode: 'walls', names: [null, null] });
+  assert.deepEqual(await result, { ok: { t: 'joined', slot: 1, mode: 'walls', names: [null, null] } });
+});
+
+test('страница подвисла, но сервер так и не ответил — ошибка всё равно будет', async () => {
+  const conn = new RoomConnection('http://localhost:8787', 'ABCDE', {});
+  const result = settle(conn.connect());
+  mock.timers.setTime(Date.now() + 14_000);
+  mock.timers.tick(0);
+  mock.timers.tick(2_001); // перепроверка вовремя: соединение так и не открылось
+  assert.match((await result).error, /Сервер не отвечает/);
+});
+
 test('сервер не отвечает вовсе — через 10 секунд честная ошибка', async () => {
   const conn = new RoomConnection('http://localhost:8787', 'ABCDE', {});
   const result = settle(conn.connect());
