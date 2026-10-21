@@ -252,7 +252,10 @@ h2 { font-size: 26px; }
 .snake-status .effect { position: relative; overflow: hidden; padding: 4px 9px 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
 .snake-status .effect.ending { animation: effect-ending 0.3s ease-in-out infinite alternate; }
 /* Полоска внизу значка — сколько осталось. */
-.effect-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: 0.8; }
+/* Полоска — сколько осталось: сжимается по ширине (transform — без перерисовки разметки). */
+.effect-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: currentColor; opacity: 0.8; transform-origin: left center; }
+/* Цифры одинаковой ширины: «3» и «4» не меняют ширину таймера. */
+.snake-status .effect-num { font-variant-numeric: tabular-nums; font-weight: 600; margin-left: 0.25em; }
 @keyframes effect-ending { to { background: color-mix(in srgb, currentColor 30%, var(--panel)); } }
 @media (prefers-reduced-motion: reduce) { .snake-status .effect.ending { animation: none; } }
 

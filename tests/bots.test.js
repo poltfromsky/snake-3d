@@ -119,3 +119,66 @@ for (const [strong, weak, strongOptions] of ladder) {
     assert.ok(r.wins >= 4, `${strong} против ${weak}: ${JSON.stringify(r)}`);
   });
 }
+
+/**
+ * Партия бота на поле, как на телефоне (14×20, «Классика»), против змейки, которая едет прямо.
+ * worker — как отвечает поток бота: 'never' (ответ всегда опаздывает), 'instant' или null (без потока).
+ * Возвращает, сколько бот съел и сколько раз сменил направление.
+ */
+async function phoneMatch(level, worker, seed = 5, steps = 400) {
+  const { BotPlayer } = await import('../src/bot-player.js');
+  const duel = new Duel({ mode: 'classic', width: 14, height: 20 }, seeded(seed));
+  const fake = worker === null ? null : {
+    postMessage(msg) {
+      if (worker === 'instant') queueMicrotask(() => this.onmessage({ data: { id: msg.id, move: chooseMove(msg.state, msg.me, msg.level, seeded(msg.id), msg.options), spentMs: 1 } }));
+    },
+    terminate() {},
+  };
+  const bot = new BotPlayer(level, 1, { createWorker: () => fake });
+  let turns = 0;
+  let last = duel.players[1].direction;
+  for (let i = 0; i < steps && !duel.over; i += 1) {
+    bot.update(duel);
+    await Promise.resolve(); // ответ «мгновенного» потока приходит до шага
+    duel.step();
+    const dir = duel.players[1].direction;
+    if (dir !== last) turns += 1;
+    last = dir;
+  }
+  bot.dispose();
+  return { eaten: duel.players[1].score / 10, turns, alive: duel.players[1].alive };
+}
+
+for (const level of BOT_ORDER) {
+  test(`${BOT_LEVELS[level].name}: даже если поток бота ни разу не успел ответить, бот поворачивает и ест`, async () => {
+    // Так было на телефоне: Claude вырос, игра ускорилась, ответы опаздывали — бот ехал только прямо
+    // (раньше здесь было 0 поворотов). Соперник едет прямо и быстро врезается — считаем по трём партиям.
+    let turns = 0;
+    let eaten = 0;
+    for (const seed of [5, 6, 7]) {
+      const r = await phoneMatch(level, 'never', seed);
+      turns += r.turns;
+      eaten += r.eaten;
+    }
+    assert.ok(turns >= 8, `поворотов ${turns}`);
+    assert.ok(eaten >= 4, `съел ${eaten}`);
+  });
+}
+
+test('Claude с потоком, который отвечает вовремя, тоже играет: поворачивает и ест', async () => {
+  const r = await phoneMatch('claude', 'instant');
+  assert.ok(r.turns >= 8, `поворотов ${r.turns}`);
+  assert.ok(r.eaten >= 4, `съел ${r.eaten}`);
+});
+
+test('бюджет потока бота: опаздываем — думаем короче; успеваем — до 35 мс', async () => {
+  const { BotPlayer } = await import('../src/bot-player.js');
+  const bot = new BotPlayer('claude', 1, { createWorker: () => null });
+  const duel = { stepIntervalMs: 120 };
+  assert.equal(bot.budget(duel), 35);
+  bot.late = 2;
+  assert.ok(bot.budget(duel) < 35, 'опоздали дважды — думаем короче');
+  bot.late = 0;
+  bot.overhead = 200; // поток отвечает очень медленно — минимум
+  assert.equal(bot.budget(duel), 4);
+});

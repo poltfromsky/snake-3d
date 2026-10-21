@@ -85,6 +85,18 @@ export class Duel {
     return true;
   }
 
+  /**
+   * Заменить заказанный поворот (для бота: сначала быстрый ход, потом — обдуманный).
+   * Тот же ход, что и сейчас, — значит «прямо»: очередь пустеет. Разворот назад не принимается.
+   */
+  setTurn(index, dir) {
+    const p = this.players[index];
+    if (!p || !p.alive || !dir) return false;
+    if (isOpposite(dir, p.direction)) return false;
+    p.turnQueue = sameCell(dir, p.direction) ? [] : [dir];
+    return true;
+  }
+
   update(dtMs) {
     if (this.over) return [];
     const events = [];

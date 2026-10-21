@@ -864,6 +864,7 @@ exposeForTests({
   get kind() { return mode.kind; },
   get state() { return app.state; },
   get game() { return mode.game; },
+  get headScreen() { return renderer.headScreen; }, // точка головы на экране — для проверки таймера статусов
   get turn() { return renderer.turn; },
   get theme() { return document.documentElement.dataset.theme; },
   get fieldInsets() { return renderer.insets; },
