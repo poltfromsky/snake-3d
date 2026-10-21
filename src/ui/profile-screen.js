@@ -16,11 +16,12 @@ import {
 } from '../storage.js';
 import { $, markActive, serverMessage } from './dom.js';
 import { iconSvg } from './icons.js';
+import { addPasswordToggles, hidePasswords } from './password-field.js';
 import { PLATFORM_ICONS } from './records-screen.js';
 
 const MODE_LABELS = Object.freeze({ classic: 'Классика', walls: 'Стены', timed: 'На время' });
 const SPEED_LABELS = Object.freeze({ slow: 'Медленно', normal: 'Нормально', fast: 'Быстро' });
-const PARTS = ['#profile-tabs', '#profile-login', '#profile-create', '#profile-recover', '#profile-me', '#profile-password', '#profile-code'];
+const PARTS = ['#profile-vpn', '#profile-tabs', '#profile-login', '#profile-create', '#profile-recover', '#profile-me', '#profile-password', '#profile-code'];
 const PASSWORD_FIELDS = ['#profile-login-pass', '#profile-new-pass', '#profile-new-pass2', '#profile-recover-pass',
   '#profile-recover-pass2', '#profile-current-pass', '#profile-change-pass', '#profile-change-pass2'];
 /** Сколько ждать второго нажатия «Выйти из профиля». */
@@ -58,6 +59,7 @@ export function createProfileScreen({
 
   function clearPasswords() {
     for (const id of PASSWORD_FIELDS) $(id).value = '';
+    hidePasswords($('#screen-profile'));
   }
 
   function resetLogout() {
@@ -73,7 +75,7 @@ export function createProfileScreen({
       ? `Ник «${name}» пока только на этом устройстве. Создайте профиль — и заходите под ним с телефона и компьютера.`
       : 'Войдите, если профиль уже есть, или создайте новый.';
     markActive($('#profile-tabs'), 'tab', tab);
-    only('#profile-tabs', tab === 'login' ? '#profile-login' : '#profile-create');
+    only('#profile-vpn', '#profile-tabs', tab === 'login' ? '#profile-login' : '#profile-create');
     $('#profile-login-name').value = name;
     $('#profile-new-name').value = name;
   }
@@ -129,14 +131,14 @@ export function createProfileScreen({
       }
       $('#profile-records').replaceChildren(...rows.map(recordRow));
     }, () => {
-      if (id === statsRequest) recordsMessage('Не удалось загрузить — проверьте интернет.');
+      if (id === statsRequest) recordsMessage('Не удалось загрузить — проверьте интернет (из России — с VPN).');
     });
   }
 
   function showRecover(name) {
     $('#profile-title').textContent = 'Восстановление';
     $('#profile-state').textContent = '';
-    only('#profile-recover');
+    only('#profile-vpn', '#profile-recover');
     $('#profile-recover-name').value = name ?? '';
     $('#profile-recover-code').value = '';
   }
@@ -169,12 +171,13 @@ export function createProfileScreen({
   async function run(message, action) {
     if (busy) return;
     busy = true;
-    for (const b of document.querySelectorAll('#screen-profile button')) b.disabled = true;
+    // Глазок у пароля остаётся рабочим: пароль можно посмотреть, пока идёт проверка.
+    for (const b of document.querySelectorAll('#screen-profile button:not(.pass-eye)')) b.disabled = true;
     status(message);
     try {
       await action();
     } catch (err) {
-      status(serverMessage(err, 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.'), true);
+      status(serverMessage(err, 'Нет связи с сервером. Если вы в России — включите VPN и попробуйте ещё раз.'), true);
     } finally {
       busy = false;
       for (const b of document.querySelectorAll('#screen-profile button')) b.disabled = false;
@@ -194,6 +197,8 @@ export function createProfileScreen({
     saveProfile(nameKey(name));
     onChange();
   }
+
+  addPasswordToggles($('#screen-profile'));
 
   $('#profile-tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('button')?.dataset.tab;

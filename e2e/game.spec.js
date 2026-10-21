@@ -460,3 +460,27 @@ test.describe('профиль с паролем', () => {
     expect(errors).toEqual([]);
   });
 });
+
+test('глазок у пароля: показывает только своё поле, по умолчанию всё скрыто, есть подсказка про VPN', async ({ page }) => {
+  const errors = await openGame(page, { playerName: 'Питон' });
+  await page.locator('#screen-menu [data-action="profile"]').click();
+  await expect(page.locator('#profile-vpn')).toBeVisible();
+  const first = page.locator('#profile-new-pass');
+  const second = page.locator('#profile-new-pass2');
+  await expect(first).toHaveAttribute('type', 'password');
+  await expect(second).toHaveAttribute('type', 'password');
+  await first.fill('пароль-раз-1');
+  await second.fill('пароль-два-2');
+  const eyes = page.locator('#profile-create .pass-eye');
+  await expect(eyes).toHaveCount(2);
+  await eyes.nth(1).click();
+  await expect(second).toHaveAttribute('type', 'text');
+  await expect(first).toHaveAttribute('type', 'password', { timeout: 1000 }); // первый остаётся скрытым
+  await expect(eyes.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await eyes.nth(1).click();
+  await expect(second).toHaveAttribute('type', 'password');
+  // Переход на вкладку входа и обратно — пароли снова скрыты, глазки на месте.
+  await page.locator('#profile-tabs [data-tab="login"]').click();
+  await expect(page.locator('#profile-login .pass-eye')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

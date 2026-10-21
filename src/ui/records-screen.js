@@ -140,7 +140,7 @@ export function createRecordsScreen({ settings, leaderboard }) {
       globalRows(list);
       showPlace(place);
     } catch {
-      if (id === request) message('Не удалось загрузить общую таблицу. Проверьте интернет.');
+      if (id === request) message('Не удалось загрузить общую таблицу. Проверьте интернет; из России — включите VPN.');
     }
   }
 

@@ -396,6 +396,36 @@ input:not([type]), input[type="text"], input[type="password"], textarea {
 .profile-records li.empty { display: block; color: var(--muted); border: none; }
 .profile-records .platform-icon { display: inline-block; width: 1em; height: 1em; margin-right: 0.35em; vertical-align: -0.15em; color: var(--muted); }
 .profile-btn { display: flex; gap: 8px; align-items: center; justify-content: center; }
+/* Поле пароля с глазком: кнопка внутри поля справа, нажимается всегда. */
+.pass-field { position: relative; display: block; }
+.pass-field input { width: 100%; box-sizing: border-box; padding-right: 52px; }
+.pass-eye {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 10px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pass-eye:hover, .pass-eye[aria-pressed="true"] { color: var(--accent); }
+.pass-eye .icon { width: 22px; height: 22px; }
+/* Скрытый пароль всегда точками — и когда iPhone подсвечивает поле своим автозаполнением. */
+input[type="password"] { -webkit-text-security: disc; }
+input[type="password"]:-webkit-autofill,
+input[type="password"]:autofill {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 40px #0b1022 inset;
+  box-shadow: 0 0 0 40px #0b1022 inset;
+}
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; text-align: left; }
 .record-auto { display: flex; flex-direction: column; gap: 6px; }
 .record-auto-title { margin: 0; font-weight: 600; color: var(--accent); }
