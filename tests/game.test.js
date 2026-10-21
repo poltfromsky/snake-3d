@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DIRECTIONS, Game, ITEM, MAX_QUEUED_TURNS, MODES,
+  DIRECTIONS, EFFECT_WARN_MS, effectBlinkOn, Game, ITEM, MAX_QUEUED_TURNS, MODES, SLOW_EASE_IN_MS, SLOW_FACTOR,
 } from '../src/core/game.js';
 
 /** Предсказуемый генератор: всегда возвращает одно и то же число. */
@@ -149,8 +149,70 @@ test('скорость растёт с длиной, бонус «замедле
   game.snake.push({ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 });
   assert.ok(game.ticksPerSecond > base);
   const fast = game.ticksPerSecond;
-  game.effects.slow = 1000;
+  game.effects.slow = 5000;
+  game.tickTimers(300, []);
   assert.ok(game.ticksPerSecond < fast);
+});
+
+test('«замедление» кончается плавно: последнюю секунду скорость растёт постепенно, без рывка', () => {
+  const game = makeGame();
+  const normal = game.ticksPerSecond;
+  game.effects.slow = 5000;
+  game.tickTimers(500, []); // вошли в замедление
+  assert.ok(Math.abs(game.ticksPerSecond - normal * SLOW_FACTOR) < 1e-9, 'посередине — ровно ×0.6');
+  let prev = game.ticksPerSecond;
+  let biggestJump = 0;
+  for (let t = 0; t < 5000; t += 20) {
+    game.tickTimers(20, []);
+    biggestJump = Math.max(biggestJump, Math.abs(game.ticksPerSecond - prev));
+    prev = game.ticksPerSecond;
+  }
+  assert.ok(Math.abs(game.ticksPerSecond - normal) < 1e-9, 'после конца — обычная скорость');
+  // Раньше скачок был весь разом: 40 % скорости. Теперь за кадр — доли процента.
+  assert.ok(biggestJump < normal * 0.02, `рывок ${biggestJump.toFixed(3)} шага/с за кадр`);
+});
+
+test('«замедление» начинается плавно и не сбрасывается, если съесть второе подряд', () => {
+  const game = makeGame();
+  const normal = game.ticksPerSecond;
+  game.effects.slow = 5000;
+  game.tickTimers(100, []);
+  const early = game.ticksPerSecond;
+  assert.ok(early < normal && early > normal * SLOW_FACTOR, 'за 0,1 с ещё не полностью замедлилась');
+  game.tickTimers(SLOW_EASE_IN_MS, []);
+  assert.ok(Math.abs(game.ticksPerSecond - normal * SLOW_FACTOR) < 1e-9);
+  game.effects.slow = 5000; // съели второе — замедление продолжается без скачков
+  game.tickTimers(20, []);
+  assert.ok(Math.abs(game.ticksPerSecond - normal * SLOW_FACTOR) < 1e-9);
+});
+
+test('перед концом статуса змейка мерцает, и всё чаще', () => {
+  // Пока до конца больше EFFECT_WARN_MS — не мерцает.
+  for (let ms = EFFECT_WARN_MS + 1; ms < 5000; ms += 37) assert.equal(effectBlinkOn(ms), true);
+  // Считаем переключения в первой и в последней трети предупреждения.
+  const flips = (from, to) => {
+    let count = 0;
+    let last = effectBlinkOn(from);
+    for (let ms = from; ms >= to; ms -= 2) {
+      const on = effectBlinkOn(ms);
+      if (on !== last) count += 1;
+      last = on;
+    }
+    return count;
+  };
+  const third = EFFECT_WARN_MS / 3;
+  const early = flips(EFFECT_WARN_MS, EFFECT_WARN_MS - third);
+  const late = flips(third, 1);
+  assert.ok(early >= 2, `в начале мерцает (${early})`);
+  assert.ok(late > early * 2, `к концу чаще: ${early} → ${late}`);
+});
+
+test('у змейки в данных для отрисовки — сколько осталось до конца ближайшего статуса', () => {
+  const game = makeGame();
+  assert.equal(game.snakes[0].endingIn, null);
+  game.effects.ghost = 3000;
+  game.effects.slow = 1200;
+  assert.equal(game.snakes[0].endingIn, 1200);
 });
 
 test('режим на время заканчивается, когда время вышло', () => {

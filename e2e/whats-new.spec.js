@@ -49,7 +49,7 @@ test.describe('плашка новой версии', () => {
   test('вышла новая версия: номер и «Что нового» прямо в плашке', async ({ page }) => {
     const errors = await openGame(page);
     // Сайт уже отдаёт список изменений новой версии.
-    await page.route('**/changelog.json', (route) => route.fulfill({
+    await page.route('**/changelog.json*', (route) => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
         versions: [
@@ -66,6 +66,47 @@ test.describe('плашка новой версии', () => {
     await expect(page.locator('#whats-new-list')).not.toContainText('Было давно');
     await expect(page.locator('#btn-update-now')).toBeVisible();
     expect(errors).toEqual([]);
+  });
+});
+
+test.describe('кнопка «Проверить обновления»', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('на сайте та же версия — «У вас последняя версия»', async ({ page }) => {
+    const errors = await openGame(page);
+    const current = await VERSION(page);
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#btn-check-update').click();
+    await expect(page.locator('#update-check-status')).toHaveText(`У вас последняя версия — ${current}.`);
+    await expect(page.locator('#btn-settings-update')).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+
+  test('на сайте версия новее — сразу видно номер и кнопку «Обновить сейчас»', async ({ page }) => {
+    const errors = await openGame(page);
+    let asked = '';
+    await page.route('**/changelog.json*', (route) => {
+      asked = route.request().url();
+      return route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ versions: [{ version: '9.9.0', date: '2030-01-01', title: 'Будущее', changes: ['Новая арена'] }] }),
+      });
+    });
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#btn-check-update').click();
+    await expect(page.locator('#update-check-status')).toContainText('Вышла версия 9.9.0');
+    await expect(page.locator('#btn-settings-update')).toBeVisible();
+    expect(asked).toMatch(/changelog\.json\?t=\d+/); // мимо кэша хостинга
+    expect(errors).toEqual([]);
+  });
+
+  test('нет связи с сайтом — честно говорим, что проверить не вышло', async ({ page }) => {
+    const errors = await openGame(page);
+    await page.route('**/changelog.json*', (route) => route.abort());
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#btn-check-update').click();
+    await expect(page.locator('#update-check-status')).toContainText('Не удалось проверить');
+    expect(errors.filter((e) => !/changelog/.test(e))).toEqual([]);
   });
 });
 

@@ -10,6 +10,7 @@
 import {
   deriveLoginKey, isRecoveryCode, normalizeRecoveryCode, passwordProblem,
 } from '../core/auth.js';
+import { plural } from '../core/stats.js';
 import { cleanText, LIMITS, nameKey } from '../core/validate.js';
 import {
   deviceKey, loadHistory, loadProfile, logoutProfile, saveProfile, setPlayerName,
@@ -32,10 +33,11 @@ const LOGOUT_CONFIRM_MS = 5000;
  * @param {object} deps.settings здесь хранится ник
  * @param {import('../net/leaderboard.js').Leaderboard} deps.leaderboard
  * @param {() => {open: number, total: number}} deps.achievementsSummary
+ * @param {() => {playTime: string, streak: number}} [deps.statsBrief] коротко из «Моей статистики»
  * @param {() => void} [deps.onChange] вошли, вышли, создали профиль — обновить остальные экраны
  */
 export function createProfileScreen({
-  settings, leaderboard, achievementsSummary, onChange = () => {},
+  settings, leaderboard, achievementsSummary, statsBrief = () => null, onChange = () => {},
 }) {
   let busy = false;
   let statsRequest = 0;
@@ -55,6 +57,8 @@ export function createProfileScreen({
 
   function only(...ids) {
     for (const id of PARTS) $(id).classList.toggle('hidden', !ids.includes(id));
+    // Пока показан код восстановления или смена пароля — без лишних кнопок.
+    $('#btn-profile-stats').classList.toggle('hidden', ids.includes('#profile-code') || ids.includes('#profile-password'));
   }
 
   function clearPasswords() {
@@ -118,6 +122,12 @@ export function createProfileScreen({
     $('#profile-games').textContent = games;
     const { open, total } = achievementsSummary();
     $('#profile-achievements').textContent = `${open} из ${total}`;
+    const brief = statsBrief();
+    if (brief) {
+      $('#profile-playtime').textContent = brief.playTime;
+      $('#profile-streak').textContent = String(brief.streak);
+      $('#profile-streak-label').textContent = `${plural(brief.streak, ['день', 'дня', 'дней'])} подряд`;
+    }
     resetLogout();
     only('#profile-me');
 

@@ -31,7 +31,7 @@ test.describe('телефон', () => {
 
   test('ни один экран не вылезает за края телефона', async ({ page }) => {
     const errors = await openGame(page);
-    const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install', 'no3d'];
+    const screens = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install', 'no3d', 'dpad-layout'];
     const overflow = await page.evaluate((ids) => {
       const { innerWidth } = globalThis;
       const out = {};
@@ -157,6 +157,79 @@ test.describe('телефон', () => {
     // На паузе кнопок нет — не мешают меню.
     await page.locator('#btn-pause').click();
     await expect(page.locator('#dpad')).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+
+  test('своё расположение кнопок: перетащить, «Справа», размер — запоминается и работает в игре', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic', controls: 'buttons' });
+    const center = () => page.locator('#dpad').evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width };
+    });
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#btn-dpad-layout').click();
+    await expect(page.locator('#screen-dpad-layout')).toBeVisible();
+    await expect(page.locator('#dpad')).toBeVisible();
+    await expect(page.locator('#dpad')).toHaveClass(/editing/);
+
+    // Тащим крест пальцем вверх и влево.
+    const start = await center();
+    await page.evaluate(({ x, y }) => {
+      const dpad = globalThis.document.querySelector('#dpad');
+      const fire = (type, cx, cy) => dpad.dispatchEvent(new globalThis.PointerEvent(type, {
+        pointerId: 9, pointerType: 'touch', isPrimary: true, bubbles: true, clientX: cx, clientY: cy,
+      }));
+      fire('pointerdown', x, y);
+      fire('pointermove', x - 60, y - 120);
+      fire('pointermove', x - 80, y - 200);
+      fire('pointerup', x - 80, y - 200);
+    }, start);
+    const moved = await center();
+    expect(start.y - moved.y).toBeGreaterThan(100); // на низком экране упирается в панель редактора — так и надо
+    expect(await gameState(page)).not.toBe('playing'); // перетаскивание — не поворот и не игра
+
+    // Быстрое место «Справа» и крупнее.
+    await page.locator('#dpad-preset [data-value="right"]').click();
+    await page.locator('#dpad-scale').evaluate((el) => {
+      el.value = '1.3';
+      el.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
+    });
+    const right = await center();
+    const viewport = page.viewportSize();
+    expect(right.x).toBeGreaterThan(viewport.width / 2);
+    expect(right.w).toBeGreaterThan(start.w * 1.2);
+    await page.locator('[data-action="dpad-done"]').click();
+    await expect(page.locator('#screen-settings')).toBeVisible();
+    await expect(page.locator('#dpad')).toBeHidden();
+
+    // В игре крест там же и по-прежнему поворачивает змейку.
+    await page.locator('#screen-settings [data-action="back"]').click();
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await expect(page.locator('#dpad')).toBeVisible();
+    await expect(page.locator('#dpad')).not.toHaveClass(/editing/);
+    const inGame = await center();
+    expect(Math.abs(inGame.x - right.x)).toBeLessThan(2);
+    await page.locator('#dpad [data-dir="UP"]').dispatchEvent('pointerdown');
+    expect(await lastTurn(page)).toEqual({ x: 0, y: -1 });
+    const saved = await page.evaluate(() => JSON.parse(globalThis.localStorage.getItem('snake3d.settings.v1')).dpad);
+    expect(saved.scale).toBeCloseTo(1.3);
+    expect(saved.x).toBeGreaterThan(0.5);
+    expect(errors).toEqual([]);
+  });
+
+  test('«Сбросить» возвращает кнопки вниз по центру', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic', controls: 'buttons', dpad: { x: 0.8, y: 0.4, scale: 1.2 } });
+    await page.locator('#screen-menu [data-action="settings"]').click();
+    await page.locator('#btn-dpad-layout').click();
+    await expect.poll(() => page.locator('#dpad').evaluate((el) => el.style.top)).not.toBe('');
+    await page.locator('[data-action="dpad-reset"]').click();
+    expect(await page.locator('#dpad').evaluate((el) => el.style.top)).toBe('');
+    const box = await page.locator('#dpad').boundingBox();
+    const viewport = page.viewportSize();
+    expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(2);
+    await page.locator('[data-action="dpad-done"]').click();
+    const saved = await page.evaluate(() => JSON.parse(globalThis.localStorage.getItem('snake3d.settings.v1')).dpad);
+    expect(saved).toBeNull();
     expect(errors).toEqual([]);
   });
 

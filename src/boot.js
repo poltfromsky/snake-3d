@@ -4,6 +4,14 @@
  * сцены, и человек видел меню с кнопками, которые ничего не делают.
  */
 
+// Браузер присылает beforeinstallprompt один раз и сразу, как сайт признан устанавливаемым — это бывает
+// раньше, чем загрузится игра (3D-библиотека тянется по сети). Ловим событие здесь, в самом начале,
+// и отдаём кнопке «Установить как приложение» (setupInstall в pwa.js); иначе оно терялось.
+globalThis.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // своя кнопка в меню вместо баннера браузера поверх игры
+  globalThis.__installPrompt = e;
+});
+
 function webglAvailable() {
   try {
     const canvas = document.createElement('canvas');

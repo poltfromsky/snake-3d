@@ -8,20 +8,51 @@
  */
 import { installKind, isStandalone } from './ui/device.js';
 
+const UPDATE_EVERY_MS = 15 * 60 * 1000;
+
 /**
  * @param {object} hooks
  * @param {() => void} hooks.onUpdateReady новая версия скачана и ждёт включения
  * @param {boolean} [hooks.enabled] регистрировать ли service worker
- * @returns {{applyUpdate(): void}}
+ * @returns {{applyUpdate(): void, checkNow(): Promise<string>}}
  */
 export function registerServiceWorker({ onUpdateReady, enabled = true }) {
   let waiting = null;
+  let registered = null; // Promise<ServiceWorkerRegistration | null>
+  let hasWorker = false;
   const api = {
-    /** Включить скачанную версию: страница перезагрузится уже с ней. */
+    /**
+     * Включить скачанную версию: страница перезагрузится уже с ней.
+     * Без service worker (старый браузер) — просто перезагрузить страницу: файлы возьмутся с сайта.
+     */
     applyUpdate() {
-      if (!waiting) return;
+      if (!waiting) {
+        if (!hasWorker) window.location.reload();
+        return;
+      }
       navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
       waiting.postMessage({ type: 'SKIP_WAITING' });
+    },
+    /**
+     * Проверить обновление сейчас (кнопка «Проверить обновления»).
+     * 'ready' — новая версия скачана и ждёт кнопки «Обновить»; 'downloading' — нашлась и качается
+     * (когда докачается, придёт onUpdateReady); 'none' — на сайте ничего нового (или сайт ещё
+     * отдаёт старый sw.js из своего кэша); 'unsupported' — service worker не работает.
+     */
+    async checkNow() {
+      const registration = await registered;
+      if (!registration) return 'unsupported';
+      if (waiting) return 'ready';
+      try {
+        await registration.update();
+      } catch {
+        return 'none';
+      }
+      if (registration.waiting && updatable) {
+        notify(registration.waiting);
+        return 'ready';
+      }
+      return registration.installing ? 'downloading' : 'none';
     },
   };
   if (!enabled || !('serviceWorker' in navigator)) return api;
@@ -38,6 +69,8 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
   const register = async () => {
     try {
       const registration = await navigator.serviceWorker.register('sw.js');
+      hasWorker = true;
+      resolveRegistered(registration);
       // Уже скачанная версия ждёт с прошлого раза.
       if (registration.waiting && updatable) notify(registration.waiting);
       registration.addEventListener('updatefound', () => {
@@ -56,15 +89,35 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) registration.update().catch(() => {});
       });
+      // И пока игра открыта — раз в 15 минут: сайт отдаёт новый sw.js не сразу после выкладки
+      // (свой кэш у хостинга до 10 минут), поэтому одной проверки при запуске мало.
+      setInterval(() => { if (!document.hidden) registration.update().catch(() => {}); }, UPDATE_EVERY_MS);
     } catch {
       // Без service worker игра работает как обычный сайт.
+      resolveRegistered(null);
     }
   };
+  let resolveRegistered;
+  registered = new Promise((resolve) => { resolveRegistered = resolve; });
   // После загрузки страницы, чтобы не отнимать сеть у самой игры. Игра грузится
   // через boot.js и может стартовать уже после события load — тогда сразу.
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });
   return api;
+}
+
+/**
+ * Стоит ли игра на этом устройстве как приложение. Браузер отвечает только на вопрос про приложения,
+ * перечисленные в манифесте (related_applications), и не везде (Chrome и Edge; Safari и Firefox — нет).
+ * Нет ответа — считаем «не знаем», то есть false: игрок увидит обычную инструкцию.
+ */
+export async function isAppInstalled() {
+  try {
+    if (!navigator.getInstalledRelatedApps) return false;
+    return (await navigator.getInstalledRelatedApps()).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -78,14 +131,14 @@ export function registerServiceWorker({ onUpdateReady, enabled = true }) {
  * @returns {{install(): Promise<void>}}
  */
 export function setupInstall({ setVisible, showHelp }) {
-  let deferred = null;
+  let deferred = globalThis.__installPrompt ?? null; // поймано в boot.js, пока игра грузилась
   if (isStandalone()) {
     setVisible(false);
     return { install: async () => {} };
   }
   setVisible(true);
   window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault(); // своя кнопка в меню вместо баннера браузера поверх игры
+    e.preventDefault();
     deferred = e;
   });
   window.addEventListener('appinstalled', () => {
@@ -100,7 +153,7 @@ export function setupInstall({ setVisible, showHelp }) {
         if (outcome === 'accepted') setVisible(false);
         deferred = null;
       } else {
-        showHelp(installKind());
+        showHelp((await isAppInstalled()) ? 'installed' : installKind());
       }
     },
   };

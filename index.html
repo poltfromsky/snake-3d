@@ -37,10 +37,11 @@
     <div class="hud-stat solo-stat"><span>Уровень</span><b id="hud-level">1</b></div>
     <div class="hud-duel duel-stat" id="hud-duel"></div>
     <div class="hud-stat hidden" id="hud-timer-box"><span>Время</span><b id="hud-timer">1:30</b></div>
-    <div id="hud-effects" class="hud-effects"></div>
     <!-- Иконки — свои SVG, а не символы шрифта: ◀ ▶ некоторые браузеры (Яндекс на Samsung) рисуют как эмодзи. -->
     <button id="btn-pause" class="icon-btn" aria-label="Пауза"><span class="ic-only" data-icon="pause"></span></button>
   </header>
+  <!-- Таймеры статусов («Призрак», «Замедление») — над головой змейки, а не в углу (src/ui/screens.js). -->
+  <div id="snake-status" class="snake-status hidden"></div>
   <div id="toast" class="toast" aria-live="polite"></div>
   <!-- Обучение: задание поверх игры. -->
   <div id="tutorial-card" class="tutorial-card hidden" role="status" aria-live="polite">
@@ -63,6 +64,16 @@
     <button data-dir="DOWN" aria-label="Вниз"><span class="ic-only" data-icon="triangle" style="transform: rotate(180deg)"></span></button>
   </div>
   <div id="achievement-toasts" class="achievement-toasts" aria-live="polite"></div>
+
+  <!-- Первый заход: карточка поверх меню (src/ui/welcome.js). Обучение само не стартует. -->
+  <div id="welcome-card" class="welcome-card hidden" role="dialog" aria-labelledby="welcome-title">
+    <b id="welcome-title">Впервые здесь?</b>
+    <p>Подсвечено главное: «Играть», боты и рекорды. Обучение займёт минуту: как поворачивать, что есть и чего избегать.</p>
+    <div class="welcome-actions">
+      <button class="btn primary" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение</button>
+      <button class="btn" data-action="welcome-later">Позже</button>
+    </div>
+  </div>
 
   <!-- Главное меню -->
   <section id="screen-menu" class="screen">
@@ -256,9 +267,15 @@
         <li>Откройте меню Firefox — <b>⋮</b>.</li>
         <li>Выберите <b>«Добавить на главный экран»</b> и подтвердите.</li>
       </ol>
+      <ol class="install-steps" data-kind="installed">
+        <li>Игра уже установлена на этом устройстве.</li>
+        <li>На компьютере нажмите <b>«Открыть в приложении»</b> в адресной строке справа. На телефоне — откройте игру со значка на главном экране.</li>
+        <li>Вернуть ярлык на рабочий стол (Chrome): введите в адресную строку <b>chrome://apps</b>, нажмите на игру правой кнопкой и выберите <b>«Создать ярлык…»</b>. В Edge — <b>edge://apps</b>.</li>
+      </ol>
       <ol class="install-steps" data-kind="desktop">
-        <li>Справа в адресной строке нажмите значок установки <span class="ic" data-icon="install"></span> — если он есть.</li>
-        <li>Или откройте меню браузера (<b>⋮</b> или <b>≡</b>) и найдите пункт <b>«Установить…»</b>. В Chrome он лежит в разделе «Трансляция, сохранение и отправка».</li>
+        <li>Если в адресной строке справа есть кнопка <b>«Открыть в приложении»</b> — игра уже установлена, нажмите её.</li>
+        <li>Справа в адресной строке нажмите значок установки — в Chrome и Яндексе это монитор со стрелкой вниз <span class="ic" data-icon="installBar"></span>, в Edge — квадратики с плюсом. Откроется окно «Установить приложение».</li>
+        <li>Или откройте меню браузера (<b>⋮</b> или <b>≡</b>) и найдите пункт <b>«Установить…»</b>. В Chrome он лежит в разделе «Транслировать, сохранить, поделиться».</li>
         <li>Если пункта нет — обновите страницу и попробуйте снова: после удаления приложения браузер иногда предлагает установку не сразу.</li>
       </ol>
       <ol class="install-steps" data-kind="safari-mac">
@@ -425,6 +442,8 @@
         <div class="profile-stats">
           <div><b id="profile-games">0</b><small>попыток на этом устройстве</small></div>
           <div><b id="profile-achievements">0 из 0</b><small>достижений</small></div>
+          <div><b id="profile-playtime">0 мин</b><small>в игре</small></div>
+          <div><b id="profile-streak">0</b><small id="profile-streak-label">дней подряд</small></div>
         </div>
         <h3 class="profile-heading">Лучшие результаты в общей таблице</h3>
         <ul id="profile-records" class="profile-records"></ul>
@@ -451,6 +470,8 @@
       </div>
 
       <p id="profile-status" class="status" aria-live="polite"></p>
+      <!-- Статистика — на этом устройстве, поэтому доступна и без входа в профиль. -->
+      <button class="btn" id="btn-profile-stats" data-action="stats">Моя статистика</button>
       <button class="btn" data-action="profile-back">Назад</button>
     </div>
   </section>
@@ -495,6 +516,9 @@
         <button class="btn" data-action="profile">Профиль</button>
       </div>
       <div class="field">Версия игры <b id="settings-version"></b>
+        <button class="btn" id="btn-check-update" data-action="check-update">Проверить обновления</button>
+        <p class="hint hidden" id="update-check-status" role="status"></p>
+        <button class="btn primary hidden" id="btn-settings-update" data-action="update">Обновить сейчас</button>
         <button class="btn" data-action="whats-new">История обновлений</button>
         <button class="btn install-btn hidden" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
       </div>
@@ -506,8 +530,75 @@
           <button data-value="swipe">Свайпы</button>
           <button data-value="buttons">Кнопки на экране</button>
         </div>
+        <button class="btn hidden" id="btn-dpad-layout" data-action="dpad-layout">Расположение кнопок</button>
       </div>
       <button class="btn" data-action="back">Готово</button>
+    </div>
+  </section>
+
+  <!-- Моя статистика (src/ui/stats-screen.js): всё считается по партиям на этом устройстве. -->
+  <section id="screen-stats" class="screen hidden">
+    <div class="panel stats-panel">
+      <h2>Моя статистика</h2>
+      <p class="subtitle" id="stats-note"></p>
+      <div class="stats-kpis" id="stats-kpis"></div>
+
+      <section class="stats-block">
+        <h3>Прогресс и рекорды</h3>
+        <div class="segmented compact" id="stats-mode" role="radiogroup" aria-label="Режим">
+          <button data-mode="classic">Классика</button>
+          <button data-mode="walls">Стены</button>
+          <button data-mode="timed">На время</button>
+        </div>
+        <div class="stats-chart" id="stats-progress"></div>
+        <p class="stats-text" id="stats-progress-text"></p>
+        <div class="stats-speeds" id="stats-speeds"></div>
+      </section>
+
+      <section class="stats-block">
+        <h3>Почему заканчиваются партии</h3>
+        <div id="stats-deaths"></div>
+        <p class="stats-text stats-insight" id="stats-insight"></p>
+      </section>
+
+      <section class="stats-block">
+        <h3>Боты и онлайн</h3>
+        <div class="stats-duels" id="stats-duels"></div>
+      </section>
+
+      <section class="stats-block">
+        <h3>Активность</h3>
+        <div class="stats-chart" id="stats-activity"></div>
+        <p class="stats-text" id="stats-activity-text"></p>
+      </section>
+
+      <details class="stats-block stats-table-wrap">
+        <summary>Последние партии списком</summary>
+        <div id="stats-table"></div>
+      </details>
+
+      <button class="btn" data-action="stats-back">Назад</button>
+    </div>
+  </section>
+  <div id="stats-tip" class="stats-tip hidden" role="tooltip"></div>
+
+  <!-- Своё расположение кнопок-стрелок: крест перетаскивают пальцем (src/ui/dpad-layout.js). -->
+  <section id="screen-dpad-layout" class="screen hidden dpad-editor-screen">
+    <div class="panel small dpad-editor">
+      <h2>Расположение кнопок</h2>
+      <p class="subtitle">Перетащите крест пальцем туда, где удобно. Запомнится на этом устройстве.</p>
+      <div class="segmented compact" id="dpad-preset">
+        <button data-value="left">Слева</button>
+        <button data-value="center">По центру</button>
+        <button data-value="right">Справа</button>
+      </div>
+      <label class="dpad-scale-label">Размер кнопок
+        <input type="range" id="dpad-scale" min="0.75" max="1.4" step="0.05" value="1">
+      </label>
+      <div class="welcome-actions">
+        <button class="btn" data-action="dpad-reset">Сбросить</button>
+        <button class="btn primary" data-action="dpad-done">Готово</button>
+      </div>
     </div>
   </section>
 

@@ -54,6 +54,39 @@ test('без интернета игра открывается и в неё м�
   }
 });
 
+test('браузер предложил установку, пока игра ещё грузилась: кнопка открывает его окно, а не инструкцию', async ({ page }) => {
+  await page.addInitScript(() => {
+    // Как Chrome и Edge: событие приходит рано, до загрузки игры. prompt() запоминаем.
+    globalThis.__promptCalls = 0;
+    // boot.js (модуль) уже выполнен, а игра ещё грузится — тут событие и приходит.
+    globalThis.document.addEventListener('DOMContentLoaded', () => {
+      const e = new Event('beforeinstallprompt', { cancelable: true });
+      e.prompt = async () => { globalThis.__promptCalls += 1; };
+      e.userChoice = Promise.resolve({ outcome: 'dismissed' });
+      globalThis.dispatchEvent(e);
+    });
+  });
+  const errors = await openGame(page);
+  await page.locator('#screen-menu [data-action="install"]').click();
+  await expect.poll(() => page.evaluate(() => globalThis.__promptCalls)).toBe(1);
+  await expect(page.locator('#screen-install')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('игра уже установлена: вместо общей инструкции — подсказка про «Открыть в приложении» и ярлык', async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.addEventListener('beforeinstallprompt', (e) => e.stopImmediatePropagation(), { capture: true });
+    globalThis.navigator.getInstalledRelatedApps = async () => [{ platform: 'webapp' }];
+  });
+  const errors = await openGame(page);
+  await page.locator('#screen-menu [data-action="install"]').click();
+  const steps = page.locator('#screen-install ol.install-steps:visible');
+  await expect(steps).toHaveCount(1);
+  await expect(steps).toContainText('Игра уже установлена');
+  await expect(steps).toContainText('Открыть в приложении');
+  expect(errors).toEqual([]);
+});
+
 test('кнопка установки видна всегда: в меню и в настройках, а без окна браузера — инструкция под него', async ({ page }) => {
   // Своё окно установки браузер может и не дать (Chrome после удаления приложения, Safari, Firefox) —
   // как будто его нет: игра должна показать инструкцию.

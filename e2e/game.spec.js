@@ -70,6 +70,10 @@ test('против бота: победа над Ужиком даёт дост�
   await expect(toast.locator('img.medal')).toHaveAttribute('src', 'assets/medals/beat-easy.png');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('snake3d.achievements.v1')));
   expect(Object.keys(stored)).toEqual(['beat-easy']);
+  // Партия с ботом — в личной статистике: победа над Ужиком.
+  const stat = await page.evaluate(() => JSON.parse(localStorage.getItem('snake3d.stats.v1')).games[0]);
+  expect(stat).toMatchObject({ kind: 'bot', level: 'easy', result: 'win' });
+  expect(stat.durationMs).toBeGreaterThan(0);
 
   await page.locator('#screen-duel [data-action="leave"]').click();
   await expect(page.locator('.bot-btn[data-level="easy"]')).toHaveClass(/beaten/);
@@ -494,5 +498,88 @@ test('глазок у пароля: показывает только своё �
   // Переход на вкладку входа и обратно — пароли снова скрыты, глазки на месте.
   await page.locator('#profile-tabs [data-tab="login"]').click();
   await expect(page.locator('#profile-login .pass-eye')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('статусы «Призрак» и «Замедление»: таймер над змейкой, а не в углу; перед концом — подсветка', async ({ page }) => {
+  const errors = await openGame(page, { mode: 'classic' }); // сквозь стены — партия не кончится сама
+  await page.locator('#screen-menu [data-action="play"]').click();
+  await expect.poll(() => gameState(page)).toBe('playing');
+  await page.evaluate(() => {
+    const g = globalThis.__snakeE2E.game;
+    g.effects.ghost = 4000;
+    g.effects.slow = 3000;
+  });
+  const status = page.locator('#snake-status');
+  await expect(status).toBeVisible();
+  await expect(status.locator('.effect.ghost')).toBeVisible();
+  await expect(status.locator('.effect.slow')).toBeVisible();
+  await expect(page.locator('#hud .effect')).toHaveCount(0); // в углу больше нет
+  // Таймер — в пределах экрана и ниже верхней панели.
+  const box = await status.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y).toBeGreaterThan(40);
+  // Последние полторы секунды — подсвечен как «вот-вот кончится».
+  await page.evaluate(() => { globalThis.__snakeE2E.game.effects.slow = 1000; });
+  await expect(status.locator('.effect.slow.ending')).toBeVisible();
+  await page.evaluate(() => {
+    const g = globalThis.__snakeE2E.game;
+    g.effects.ghost = 0;
+    g.effects.slow = 0;
+  });
+  await expect(status).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('личная статистика: партия записывается, экран показывает цифры, график и причины', async ({ page, isMobile }) => {
+  const errors = await openGame(page); // режим «Стены»: без поворотов змейка врезается в стену
+  await page.locator('#screen-menu [data-action="play"]').click();
+  await expect(page.locator('#screen-over')).toBeVisible();
+  const stat = await page.evaluate(() => JSON.parse(localStorage.getItem('snake3d.stats.v1')).games[0]);
+  expect(stat).toMatchObject({ kind: 'solo', mode: 'walls', end: 'wall' });
+  expect(stat.durationMs).toBeGreaterThan(0);
+
+  // Ещё несколько партий «из прошлого» — чтобы было что рисовать.
+  await page.evaluate(() => {
+    const now = Date.now();
+    const stats = JSON.parse(localStorage.getItem('snake3d.stats.v1'));
+    for (let i = 1; i <= 12; i += 1) {
+      stats.games.push({
+        at: now - i * 86_400_000, kind: 'solo', mode: 'walls', speed: 'normal', score: 20 + i * 5, length: 6,
+        durationMs: 60_000, end: i % 3 ? 'self' : 'wall', apples: 3, bonuses: { slow: 0, ghost: 0, bad: 0 },
+      });
+    }
+    localStorage.setItem('snake3d.stats.v1', JSON.stringify(stats));
+  });
+  await page.locator('#screen-over [data-action="menu"]').click();
+  await page.locator('[data-action="profile"]').first().click();
+  await page.locator('#btn-profile-stats').click();
+  await expect(page.locator('#screen-stats')).toBeVisible();
+  await expect(page.locator('#stats-kpis .stats-kpi').first()).toContainText('13');
+  await expect(page.locator('#stats-mode [data-mode="walls"]')).toHaveClass(/active/); // открылся режим, где больше партий
+  await expect(page.locator('#stats-progress svg polyline')).toHaveCount(1);
+  await expect(page.locator('#stats-deaths')).toContainText('Укусили себя');
+  await expect(page.locator('#stats-deaths')).toContainText('Врезались в стену');
+  await expect(page.locator('#stats-insight')).toContainText('кусает себя');
+  await expect(page.locator('#stats-duels')).toContainText('Ужик');
+  await expect(page.locator('#stats-activity rect.stats-cell')).toHaveCount(84);
+  // График во всю ширину блока и не шире экрана.
+  const chart = await page.locator('#stats-progress svg').boundingBox();
+  const block = await page.locator('#stats-progress').boundingBox();
+  expect(chart.width).toBeGreaterThan(block.width - 4);
+  expect(chart.x + chart.width).toBeLessThanOrEqual(page.viewportSize().width);
+  // Подсказка на графике — при наведении или касании.
+  if (isMobile) await page.locator('#stats-progress svg').dispatchEvent('pointerdown', { clientX: chart.x + chart.width / 2, clientY: chart.y + 40 });
+  else await page.mouse.move(chart.x + chart.width / 2, chart.y + 40);
+  await expect(page.locator('#stats-tip')).toBeVisible();
+  await expect(page.locator('#stats-tip')).toContainText('очк');
+  // Таблица партий.
+  await page.locator('.stats-table-wrap summary').click();
+  await expect(page.locator('#stats-table tbody tr')).toHaveCount(13);
+  await page.locator('[data-action="stats-back"]').click();
+  await expect(page.locator('#screen-profile')).toBeVisible();
+  await expect(page.locator('#stats-tip')).toBeHidden();
   expect(errors).toEqual([]);
 });

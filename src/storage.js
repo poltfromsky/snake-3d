@@ -15,6 +15,9 @@ const DEVICE_KEY = 'snake3d.device.v1';
 const TUTORIAL_KEY = 'snake3d.tutorial.v1';
 const SEEN_VERSION_KEY = 'snake3d.seen-version.v1';
 const PROFILE_KEY = 'snake3d.profile.v1';
+const STATS_KEY = 'snake3d.stats.v1';
+/** Сколько последних партий помнит личная статистика (запись — около 200 байт, всего ~200 КБ). */
+const MAX_GAME_STATS = 1000;
 /** Сколько раз перед «Играть» предлагаем обучение, если его не прошли. Дальше — только плашка в меню. */
 export const TUTORIAL_OFFERS = 3;
 const MAX_HISTORY = 100;
@@ -26,6 +29,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'neon', // neon | forest | sunset
   camera: 'angled', // angled | top
   controls: 'swipe', // swipe | buttons — управление на сенсорном экране
+  dpad: null, // свои положение и размер кнопок-стрелок: {x, y, scale} в долях экрана; null — внизу по центру
   autoSubmit: 'off', // on | off — сам отправлять личный рекорд в общую таблицу
   mode: 'classic',
   playerName: '', // один ник на всю игру: рекорды, отзыв, онлайн
@@ -127,6 +131,19 @@ export function addAttempt(mode, {
   history[mode] = list;
   write(HISTORY_KEY, history);
   return score > 0 && score > before;
+}
+
+/**
+ * Личная статистика: записи о партиях на этом устройстве, новые — первыми (формат — src/core/stats.js).
+ * Только цифры партий — ни ника, ни устройства; на сервер не уходят.
+ */
+export function loadGameStats() {
+  const stats = read(STATS_KEY, null);
+  return Array.isArray(stats?.games) ? stats.games : [];
+}
+
+export function addGameStat(entry) {
+  write(STATS_KEY, { v: 1, games: [entry, ...loadGameStats()].slice(0, MAX_GAME_STATS) });
 }
 
 /**

@@ -22,8 +22,14 @@ export function createSettingsScreen({
     markActive($('#set-theme'), 'value', settings.theme);
     markActive($('#set-camera'), 'value', settings.camera);
     markActive($('#set-controls'), 'value', settings.controls);
+    syncDpadButton();
     markActive($('#set-autosubmit'), 'value', settings.autoSubmit);
     $('#settings-profile-state').textContent = profileSummary();
+  }
+
+  /** «Расположение кнопок» — только когда играют кнопками на экране. */
+  function syncDpadButton() {
+    $('#btn-dpad-layout').classList.toggle('hidden', settings.controls !== 'buttons');
   }
 
   function bindSegmented(id, key, onChange) {
@@ -40,7 +46,10 @@ export function createSettingsScreen({
   bindSegmented('#set-speed', 'speed', (v) => hooks.onSpeed(SPEED_FACTORS[v]));
   bindSegmented('#set-theme', 'theme', () => hooks.onTheme());
   bindSegmented('#set-camera', 'camera', (v) => hooks.onCamera(v));
-  bindSegmented('#set-controls', 'controls', (v) => hooks.onControls(v));
+  bindSegmented('#set-controls', 'controls', (v) => {
+    syncDpadButton();
+    hooks.onControls(v);
+  });
   bindSegmented('#set-autosubmit', 'autoSubmit', () => {});
 
   for (const [id, key] of [['#set-music', 'musicVolume'], ['#set-sfx', 'sfxVolume']]) {

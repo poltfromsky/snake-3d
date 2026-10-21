@@ -42,6 +42,37 @@ export const DEFAULTS = Object.freeze({
 
 const SCORE = { [ITEM.APPLE]: 10, [ITEM.BAD]: -5, [ITEM.SLOW]: 5, [ITEM.GHOST]: 5 };
 
+/**
+ * «Замедление»: скорость ×0.6. Вход и выход — плавные: раньше в конце скорость мгновенно
+ * прыгала с 0.6 до 1, и змейка делала рывок. Теперь последнюю секунду скорость растёт
+ * постепенно, а в начале за четверть секунды плавно падает.
+ */
+export const SLOW_FACTOR = 0.6;
+export const SLOW_EASE_IN_MS = 250;
+export const SLOW_EASE_OUT_MS = 1000;
+
+const smoothstep = (k) => k * k * (3 - 2 * k);
+
+/**
+ * Статус вот-вот закончится: последние EFFECT_WARN_MS змейка мерцает,
+ * и чем ближе конец, тем чаще — от 3 до 12 вспышек в секунду.
+ */
+export const EFFECT_WARN_MS = 1500;
+const BLINK_FROM_HZ = 3;
+const BLINK_TO_HZ = 12;
+
+/**
+ * Видна ли змейка «во вспышке» при оставшихся leftMs статуса (true — яркая фаза).
+ * Частота растёт плавно (фаза — интеграл частоты), поэтому мерцание не дёргается.
+ */
+export function effectBlinkOn(leftMs) {
+  if (!(leftMs > 0) || leftMs > EFFECT_WARN_MS) return true;
+  const e = (EFFECT_WARN_MS - leftMs) / 1000; // сколько секунд уже мерцает
+  const w = EFFECT_WARN_MS / 1000;
+  const turns = BLINK_FROM_HZ * e + ((BLINK_TO_HZ - BLINK_FROM_HZ) / (2 * w)) * e * e;
+  return turns % 1 < 0.5;
+}
+
 /** Сравнивает две клетки. */
 export const sameCell = (a, b) => a.x === b.x && a.y === b.y;
 
@@ -82,6 +113,7 @@ export class Game {
     this.obstacles = [];
     this.items = [];
     this.effects = { slow: 0, ghost: 0 };
+    this.slowDepth = 0; // 0 — обычная скорость, 1 — полное замедление (плавный вход и выход)
     this.elapsedMs = 0;
     this.timeLeftMs = this.opts.mode === MODES.TIMED ? this.opts.timedDurationMs : null;
     this.accumulatorMs = 0;
@@ -103,7 +135,18 @@ export class Game {
     const { baseTicksPerSecond, maxTicksPerSecond, speedFactor } = this.opts;
     const raw = baseTicksPerSecond + (this.length - 3) * 0.25 + (this.level - 1) * 0.5;
     const capped = Math.min(raw, maxTicksPerSecond) * speedFactor;
-    return this.effects.slow > 0 ? capped * 0.6 : capped;
+    return capped * this.slowFactor;
+  }
+
+  /** Множитель скорости от «замедления»: от 1 до SLOW_FACTOR, меняется плавно. */
+  get slowFactor() {
+    return 1 - (1 - SLOW_FACTOR) * smoothstep(this.slowDepth);
+  }
+
+  /** Сколько осталось у статуса, который кончится раньше всех (мс), или null — статусов нет. */
+  get effectEndingIn() {
+    const left = Object.values(this.effects).filter((ms) => ms > 0);
+    return left.length ? Math.min(...left) : null;
   }
 
   get stepIntervalMs() {
@@ -155,6 +198,10 @@ export class Game {
         if (this.effects[key] === 0) events.push({ type: 'effectEnd', effect: key });
       }
     }
+    // Глубина замедления: к концу статуса следует за оставшимся временем (последняя секунда —
+    // разгон до обычной скорости), а при входе растёт не быстрее, чем за SLOW_EASE_IN_MS.
+    const target = Math.min(1, this.effects.slow / SLOW_EASE_OUT_MS);
+    this.slowDepth = target > this.slowDepth ? Math.min(target, this.slowDepth + dtMs / SLOW_EASE_IN_MS) : target;
     this.items = this.items.filter((item) => {
       if (item.ttl == null) return true;
       item.ttl -= dtMs;
@@ -294,7 +341,7 @@ export class Game {
   get snakes() {
     return [{
       body: this.snake, prevBody: this.prevSnake, direction: this.direction,
-      ghost: this.effects.ghost > 0, palette: 0, alive: !this.over,
+      ghost: this.effects.ghost > 0, palette: 0, alive: !this.over, endingIn: this.effectEndingIn,
     }];
   }
 

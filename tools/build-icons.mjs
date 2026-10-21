@@ -58,6 +58,14 @@ for (const [key, [name, weight]] of Object.entries(ICONS)) {
 }
 const phone = await inner('device-mobile');
 for (const [key, glyph] of Object.entries(PHONE_GLYPHS)) entries.push([key, `${phone}<path d="${glyph}"/>`]);
+// Значок установки в адресной строке Chrome — монитор со стрелкой вниз. У Phosphor есть только
+// со стрелкой вверх (monitor-arrow-up): берём его и отражаем стрелку внутри экрана (экран — 60…180 по y).
+const monitorUp = await inner('monitor-arrow-up');
+const arrowAt = monitorUp.indexOf('M160.49');
+if (arrowAt < 0) throw new Error('monitor-arrow-up: не найдена стрелка');
+const monitorPath = monitorUp.slice(0, arrowAt).replace(/^<path d="/, '');
+const arrowPath = monitorUp.slice(arrowAt).replace(/"\/>$/, '');
+entries.push(['installBar', `<path d="${monitorPath}"/><path d="${arrowPath}" transform="matrix(1 0 0 -1 0 240)"/>`]);
 
 const source = `/**
  * Иконки интерфейса — набор Phosphor Icons ${PACKAGE.version} (толщина «${WEIGHT}»), встроенные в код.

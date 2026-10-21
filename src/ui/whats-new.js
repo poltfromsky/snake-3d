@@ -31,7 +31,8 @@ export function createWhatsNew({ version, open }) {
 
   async function fetchChangelog() {
     try {
-      const res = await fetch('changelog.json', { cache: 'no-store' });
+      // Метка времени в адресе — мимо кэша хостинга: иначе он до 10 минут отдаёт прошлый список.
+      const res = await fetch(`changelog.json?t=${Date.now()}`, { cache: 'no-store' });
       return res.ok ? await res.json() : null;
     } catch {
       return null;
@@ -83,10 +84,64 @@ export function createWhatsNew({ version, open }) {
     open('whats-new');
   });
 
+  /** Строка под кнопкой «Проверить обновления» в настройках и кнопка «Обновить» рядом. */
+  function checkStatus(text, { canUpdate = false } = {}) {
+    $('#update-check-status').textContent = text;
+    $('#update-check-status').classList.toggle('hidden', !text);
+    $('#btn-settings-update').classList.toggle('hidden', !canUpdate);
+  }
+
+  let recheck = null; // повторные проверки, пока хостинг не начнёт отдавать новую версию
+  let lastLatest = null;
+
   return {
+    /**
+     * Кнопка «Проверить обновления»: сверяем номер версии на сайте и просим service worker
+     * скачать новую. checkNow() — из pwa.js (registerServiceWorker).
+     */
+    async checkForUpdate(checkNow) {
+      clearInterval(recheck);
+      recheck = null;
+      const button = $('#btn-check-update');
+      button.disabled = true;
+      checkStatus('Проверяем…');
+      const [changelog, sw] = await Promise.all([fetchChangelog(), checkNow()]);
+      button.disabled = false;
+      const latest = latestVersion(changelog);
+      lastLatest = latest;
+      const newer = latest && compareVersions(latest, version) > 0;
+      if (sw === 'ready') {
+        checkStatus(newer ? `Версия ${latest} скачана — можно обновиться.` : 'Новая версия скачана — можно обновиться.', { canUpdate: true });
+      } else if (sw === 'downloading') {
+        checkStatus(`Нашлась версия ${newer ? latest : 'новее'} — скачивается, это несколько секунд…`);
+      } else if (newer && sw === 'unsupported') {
+        checkStatus(`Вышла версия ${latest}. Обновите страницу, чтобы её загрузить.`, { canUpdate: true });
+      } else if (newer) {
+        // Номер уже новый, а сайт ещё отдаёт прошлую сборку из своего кэша — проверяем сами ещё.
+        checkStatus(`Версия ${latest} уже вышла и вот-вот будет доступна — проверим ещё раз сами.`);
+        let tries = 0;
+        recheck = setInterval(async () => {
+          tries += 1;
+          const state = await checkNow();
+          if (state === 'downloading') checkStatus(`Версия ${latest} скачивается…`);
+          if (state !== 'none' || tries >= 20) {
+            clearInterval(recheck);
+            recheck = null;
+          }
+        }, 30_000);
+      } else if (!changelog) {
+        checkStatus('Не удалось проверить: нет связи с сайтом игры. Попробуйте позже.');
+      } else {
+        checkStatus(`У вас последняя версия — ${version}.`);
+      }
+    },
+
     /** Новая версия скачана: показать её номер и кнопку «Что нового». */
     async onUpdateReady() {
       $('#update-banner').classList.remove('hidden');
+      checkStatus(lastLatest && compareVersions(lastLatest, version) > 0
+        ? `Версия ${lastLatest} скачана — можно обновиться.`
+        : 'Новая версия скачана — можно обновиться.', { canUpdate: true });
       const changelog = await fetchChangelog();
       const latest = latestVersion(changelog);
       if (!latest || compareVersions(latest, version) <= 0) return;

@@ -11,6 +11,42 @@
 /** Радиус центра креста, где нажатие ничего не значит (пальцем сюда попадают случайно). */
 const DEAD_ZONE_PX = 14;
 
+/** Размер креста в CSS (три кнопки по 64 px и два зазора по 6 px) и пределы его масштаба. */
+const DPAD_SIZE_PX = 64 * 3 + 6 * 2;
+export const DPAD_SCALE_MIN = 0.75;
+export const DPAD_SCALE_MAX = 1.4;
+const EDGE_PX = 8;
+
+/**
+ * Где на экране поставить крест (центр в пикселях и масштаб) по сохранённой раскладке
+ * {x, y, scale} в долях экрана. Неверная раскладка — null (место по умолчанию: внизу по центру).
+ * Крест целиком остаётся на экране и ниже top (например, панели редактора).
+ */
+export function dpadPlacement(layout, width, height, { top = 0 } = {}) {
+  if (!layout || ![layout.x, layout.y, layout.scale].every(Number.isFinite)) return null;
+  const scale = Math.min(DPAD_SCALE_MAX, Math.max(DPAD_SCALE_MIN, layout.scale));
+  const half = (DPAD_SIZE_PX * scale) / 2 + EDGE_PX;
+  const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+  return {
+    cx: clamp(layout.x * width, half, width - half),
+    cy: clamp(layout.y * height, top + half, height - half),
+    scale,
+  };
+}
+
+/** Ставит крест по раскладке; null — убрать своё положение (останется место из CSS). */
+export function applyDpadLayout(root, layout) {
+  const placed = dpadPlacement(layout, window.innerWidth, window.innerHeight);
+  if (!placed) {
+    for (const prop of ['left', 'top', 'bottom', 'transform']) root.style.removeProperty(prop);
+    return;
+  }
+  root.style.left = `${placed.cx}px`;
+  root.style.top = `${placed.cy}px`;
+  root.style.bottom = 'auto';
+  root.style.transform = `translate(-50%, -50%) scale(${placed.scale})`;
+}
+
 /**
  * Направление по точке нажатия относительно центра креста.
  * @param {{left: number, top: number, width: number, height: number}} rect
@@ -51,7 +87,11 @@ export function setupDpad(root, onPress) {
     onPress(dir);
   };
 
+  // В редакторе расположения (src/ui/dpad-layout.js) крест перетаскивают, а не нажимают.
+  const editing = () => root.classList.contains('editing');
+
   root.addEventListener('pointerdown', (e) => {
+    if (editing()) return;
     e.preventDefault(); // без увеличения по двойному касанию и выделения
     const direct = e.target.closest?.('[data-dir]')?.dataset.dir;
     pointerId = e.pointerId;
@@ -66,7 +106,7 @@ export function setupDpad(root, onPress) {
   });
 
   root.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== pointerId) return;
+    if (e.pointerId !== pointerId || editing()) return;
     press(dpadDirection(e.clientX, e.clientY, root.getBoundingClientRect()));
   });
 

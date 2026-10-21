@@ -11,7 +11,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { ITEM, MODES } from '../core/game.js';
+import { effectBlinkOn, ITEM, MODES } from '../core/game.js';
 import {
   approachPoint, cameraLayout, fovFor, screenToField,
 } from './camera-fit.js';
@@ -252,7 +252,23 @@ export class SceneRenderer {
     this.updateParticles(dt);
     // Цель камеры — плавное положение головы между клетками, а не скачки по клеткам.
     this.placeCamera(hp, false, dt);
+    this.projectHead(hp);
     this.composer.render(dt);
+  }
+
+  /**
+   * Где на экране голова своей змейки (в CSS-пикселях окна) — над ней показываются
+   * таймеры статусов. headScreen: { x, y, visible }.
+   */
+  projectHead(hp) {
+    this.camera.updateMatrixWorld();
+    tmpVec.set(hp.x, 0.9, hp.z).project(this.camera);
+    // Холст — на всё окно (#scene: position fixed, inset 0); сдвиг под карточку обучения уже в камере.
+    this.headScreen = {
+      x: ((tmpVec.x + 1) / 2) * window.innerWidth,
+      y: ((1 - tmpVec.y) / 2) * window.innerHeight,
+      visible: tmpVec.z > -1 && tmpVec.z < 1,
+    };
   }
 
   syncItems(view, time) {
@@ -605,10 +621,14 @@ class SnakeView {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
 
-    // «Призрак» мерцает, погибшая в дуэли змейка тускнеет.
+    // «Призрак» полупрозрачный и слегка дрожит, погибшая в дуэли змейка тускнеет.
+    // Статус вот-вот кончится — змейка мигает, и всё чаще (effectBlinkOn): у призрака
+    // вспышки «плотные» — так видно, что скоро снова нельзя проходить сквозь себя.
     let opacity = 1;
-    if (snake.ghost) opacity = 0.4 + Math.sin(time * 12) * 0.15;
+    const blink = !effectBlinkOn(snake.endingIn);
+    if (snake.ghost) opacity = blink ? 1 : 0.4 + Math.sin(time * 12) * 0.15;
     else if (!snake.alive) opacity = 0.35;
+    else if (blink) opacity = 0.45;
     this.material.opacity = opacity;
     this.headMaterial.opacity = opacity;
 

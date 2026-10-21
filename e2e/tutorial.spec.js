@@ -34,10 +34,19 @@ async function eatNext(page, kind) {
   }, kind);
 }
 
-test('новый игрок: обучение запускается само и проходится до конца', async ({ page, isMobile }) => {
+test('новый игрок: сначала меню, потом карточка «Впервые здесь?»; «Пройти обучение» — и оно проходится до конца', async ({ page, isMobile }) => {
   const errors = collectErrors(page);
   await page.goto('/?e2e'); // чистое хранилище — как у человека, который зашёл впервые
   await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  // Обучение само не стартует: человек видит, куда попал.
+  await expect(page.locator('#screen-menu')).toBeVisible();
+  await expect(page.locator('#tutorial-card')).toBeHidden();
+  await expect(page.locator('#welcome-card')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#welcome-title')).toHaveText('Впервые здесь?');
+  await expect(page.locator('body')).toHaveClass(/welcome/);
+  await expect(page.locator('#tutorial-banner')).toBeHidden(); // то же самое сказано в карточке
+  await page.locator('#welcome-card [data-action="tutorial"]').click();
+  await expect(page.locator('#welcome-card')).toBeHidden();
   await expect(page.locator('#tutorial-card')).toBeVisible();
   await expect.poll(() => step(page)).toBe(0);
   await expect(page.locator('#tutorial-text')).toHaveText(isMobile
@@ -65,6 +74,32 @@ test('новый игрок: обучение запускается само и
   await page.locator('#screen-menu [data-action="play"]').click();
   await expect.poll(() => gameState(page)).toBe('playing');
   expect(errors).toEqual([]);
+});
+
+test('новый игрок: «Позже» закрывает карточку, плашка остаётся, при повторном заходе карточки нет', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/?e2e');
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await expect(page.locator('#welcome-card')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#welcome-card [data-action="welcome-later"]').click();
+  await expect(page.locator('#welcome-card')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/welcome/);
+  await expect(page.locator('#screen-menu')).toBeVisible();
+  await expect(page.locator('#tutorial-banner')).toBeVisible();
+  await page.reload();
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await page.waitForTimeout(2500); // дольше задержки карточки
+  await expect(page.locator('#welcome-card')).toBeHidden();
+  await expect(page.locator('#tutorial-banner')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('новый игрок: карточка пропадает, если он ушёл с меню (например, открыл рекорды)', async ({ page }) => {
+  await page.goto('/?e2e');
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await page.locator('#screen-menu [data-action="settings"]').click();
+  await page.waitForTimeout(2500);
+  await expect(page.locator('#welcome-card')).toBeHidden(); // не всплывает поверх чужого экрана
 });
 
 test('пропустил обучение: плашка в меню и вопрос перед игрой — первые три раза', async ({ page }) => {

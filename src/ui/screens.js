@@ -1,12 +1,13 @@
 /**
  * Экраны-оверлеи (меню, пауза, итоги…) и HUD поверх игры.
  */
+import { DEFAULTS, EFFECT_WARN_MS } from '../core/game.js';
 import { THEMES } from '../render/scene.js';
 import { $, setHtml } from './dom.js';
 import { iconHtml } from './icons.js';
 
 const SCREENS = ['menu', 'pause', 'over', 'records', 'settings', 'online', 'duel', 'feedback', 'achievements', 'install',
-  'tutorial-offer', 'tutorial-done', 'whats-new', 'profile'];
+  'tutorial-offer', 'tutorial-done', 'whats-new', 'profile', 'dpad-layout', 'stats'];
 // Поверх каких экранов виден HUD (null — игра без оверлея).
 const WITH_HUD = new Set([null, 'pause', 'over', 'duel']);
 
@@ -70,10 +71,37 @@ export function renderHud(mode, themeId) {
   $('#hud-score').textContent = data.score;
   $('#hud-length').textContent = data.length;
   $('#hud-level').textContent = data.level;
-  const effects = [];
-  if (data.effects.slow > 0) effects.push(`<span class="effect slow">${iconHtml('slow')} ${Math.ceil(data.effects.slow / 1000)}</span>`);
-  if (data.effects.ghost > 0) effects.push(`<span class="effect ghost">${iconHtml('ghost')} ${Math.ceil(data.effects.ghost / 1000)}</span>`);
-  setHtml($('#hud-effects'), effects.join(''));
+}
+
+const STATUS_LABELS = { slow: 'Замедление', ghost: 'Призрак' };
+// Над головой — на столько пикселей выше её точки на экране; если там верхняя панель — под головой.
+const STATUS_GAP = 14;
+const HUD_SAFE_TOP = 72;
+
+/**
+ * Таймеры статусов над змейкой: значок, секунды и полоска оставшегося времени.
+ * Последние EFFECT_WARN_MS — подсвечены (змейка в это время мигает).
+ * @param {object|null} data mode.hud() во время партии, иначе null — спрятать
+ * @param {{x: number, y: number, visible: boolean}|undefined} head точка головы на экране
+ */
+export function renderSnakeStatus(data, head) {
+  const el = $('#snake-status');
+  const active = data && !data.duel ? Object.entries(data.effects).filter(([, ms]) => ms > 0) : [];
+  if (!active.length || !head?.visible) {
+    el.classList.add('hidden');
+    return;
+  }
+  setHtml(el, active.map(([kind, ms]) => {
+    const ending = ms <= EFFECT_WARN_MS ? ' ending' : '';
+    const share = Math.round(Math.min(1, ms / DEFAULTS.bonusDurationMs) * 100);
+    return `<span class="effect ${kind}${ending}" title="${STATUS_LABELS[kind] ?? ''}">${iconHtml(kind)} ${Math.ceil(ms / 1000)}<i class="effect-bar" style="width: ${share}%"></i></span>`;
+  }).join(''));
+  el.classList.remove('hidden');
+  const halfWidth = el.offsetWidth / 2;
+  const x = Math.min(Math.max(head.x, halfWidth + 8), window.innerWidth - halfWidth - 8);
+  const above = head.y - STATUS_GAP - el.offsetHeight;
+  const y = above < HUD_SAFE_TOP ? head.y + STATUS_GAP * 3 : above;
+  el.style.transform = `translate(${Math.round(x - halfWidth)}px, ${Math.round(y)}px)`;
 }
 
 /** Показывать ли таймер в HUD. */

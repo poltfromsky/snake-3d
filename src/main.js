@@ -15,12 +15,13 @@ import { API_BASE, APP_VERSION } from './config.js';
 import { E2E, exposeForTests } from './e2e.js';
 import { registerServiceWorker, setupInstall } from './pwa.js';
 import {
-  isNewPlayer, loadSettings, loadTutorial, saveSettings, saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
+  addGameStat, isNewPlayer, loadSettings, loadTutorial, saveSettings, saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
 } from './storage.js';
 import { TutorialMode } from './modes/tutorial-mode.js';
 import { SwipeTracker } from './ui/swipe.js';
 import { slowerSpeed } from './core/validate.js';
 import { setupDpad } from './ui/dpad.js';
+import { createDpadEditor } from './ui/dpad-layout.js';
 import { controlDevice } from './tutorial/steps.js';
 import { StateMachine, STATES } from './app/state-machine.js';
 import {
@@ -35,13 +36,15 @@ import { createRecordsScreen } from './ui/records-screen.js';
 import { createResultSaver } from './ui/result-saver.js';
 import { duelSummary, soloSummary } from './ui/results.js';
 import {
-  renderCredits, renderHud, showScreen, showTimer,
+  renderCredits, renderHud, renderSnakeStatus, showScreen, showTimer,
 } from './ui/screens.js';
 import { createSettingsScreen } from './ui/settings-screen.js';
 import { createProfileScreen } from './ui/profile-screen.js';
 import { isTouchDevice, WakeLock } from './ui/device.js';
 import { createFirstHints } from './ui/first-hints.js';
 import { createTutorialUI } from './ui/tutorial-ui.js';
+import { createStatsScreen } from './ui/stats-screen.js';
+import { createWelcome } from './ui/welcome.js';
 import { renderIcons } from './ui/icons.js';
 import { createWhatsNew } from './ui/whats-new.js';
 
@@ -80,6 +83,8 @@ const achievementToasts = new AchievementToasts(
 );
 
 const wakeLock = new WakeLock();
+const welcome = createWelcome();
+const statsScreen = createStatsScreen();
 // Что зависит только от экрана, а не от того, как в него попали, — здесь.
 const app = new StateMachine(MENU, (_from, to) => {
   // Пока идёт партия, телефон не гасит экран.
@@ -103,6 +108,12 @@ let lastDuel = null;
  * и сколько поворотов сделано клавиатурой, свайпами и кнопками — по ним значок у ника.
  */
 let soloRun = null;
+/**
+ * Личная статистика текущей партии (одиночной, с ботом, онлайн): сколько шла без пауз,
+ * сколько съедено яблок и бонусов. Записывается в конце партии (addGameStat).
+ */
+let runStats = null;
+const newRunStats = () => ({ playMs: 0, apples: 0, bonuses: { slow: 0, ghost: 0, bad: 0 } });
 
 /* ---------------- Режимы ---------------- */
 
@@ -131,7 +142,10 @@ function fitSceneToTutorial() {
   if (card.classList.contains('hidden')) return; // на паузе поле остаётся на месте
   const dpad = $('#dpad');
   const top = card.getBoundingClientRect().bottom + 8;
-  const bottom = dpad.classList.contains('hidden') ? 0 : window.innerHeight - dpad.getBoundingClientRect().top + 8;
+  // Крест внизу — поле рисуется над ним; крест сбоку или выше середины (своё расположение) — не мешает.
+  const dpadTop = dpad.getBoundingClientRect().top;
+  const below = !dpad.classList.contains('hidden') && dpadTop > window.innerHeight * 0.55;
+  const bottom = below ? window.innerHeight - dpadTop + 8 : 0;
   renderer.setInsets(top, bottom);
 }
 
@@ -152,6 +166,7 @@ function setupScene() {
 function show(name) {
   screen = name;
   showScreen(name, mode);
+  if (name !== 'menu') welcome.dismiss(); // карточка первого захода живёт только поверх меню
 }
 
 /** Показать экран итогов чуть позже — если за это время партия не сменилась. */
@@ -179,6 +194,7 @@ function beginPlaying() {
 function play(create, message) {
   replay = () => play(create, message);
   setMode(create());
+  runStats = ['solo', 'bot'].includes(mode.kind) ? newRunStats() : null;
   setupScene();
   beginPlaying();
   if (message) toast(message);
@@ -251,6 +267,17 @@ function soloOver(reason) {
     score: game.score,
     length: game.length,
   });
+  if (mode.kind === 'solo') {
+    recordGame({
+      kind: 'solo',
+      mode: settings.mode,
+      speed: soloRun?.speed ?? settings.speed,
+      score: game.score,
+      length: game.length,
+      end: reason,
+      platform: soloPlatform(),
+    });
+  }
   if (isBest) setTimeout(() => audio.play('record'), 700);
   // На телефоне не ставим курсор в поле ника: выскочившая клавиатура закрыла бы итоги.
   showLater('over', () => { if (needsForm && !isTouchDevice()) $('#record-name').focus(); });
@@ -276,6 +303,21 @@ function duelOver(event) {
   audio.play(summary.sound);
   $('#duel-status').textContent = '';
   showLater('duel');
+
+  // Личная статистика: только свои партии — с ботом и онлайн (за одной клавиатурой «я» нет).
+  if (['bot', 'online'].includes(mode.kind)) {
+    const me = mode.myIndex;
+    const { winner, reason } = event;
+    recordGame({
+      kind: mode.kind,
+      level: mode.kind === 'bot' ? mode.level : undefined,
+      mode: mode.view?.opts?.mode ?? settings.mode,
+      speed: mode.kind === 'bot' ? settings.speed : undefined,
+      score: lastDuel.details.scores?.[me] ?? 0,
+      result: winner === null || winner === undefined ? 'draw' : winner === me ? 'win' : 'loss',
+      end: lastDuel.details.deaths?.[me] || (['time', 'headOn'].includes(reason) ? reason : null),
+    });
+  }
 
   // Победа над ботом — достижения (каждое только в первый раз).
   if (mode.kind === 'bot' && summary.iWon) {
@@ -353,6 +395,10 @@ function handleEvents(events) {
         finishTutorial();
         break;
       case 'eat':
+        if (runStats && (e.player === undefined || e.player === mode.myIndex)) {
+          if (e.kind === 'apple') runStats.apples += 1;
+          else if (e.kind in runStats.bonuses) runStats.bonuses[e.kind] += 1;
+        }
         renderer.burstAt(e.kind, e.x, e.y);
         if (e.kind === 'apple') audio.play('eat');
         else if (e.kind === 'bad') { audio.play('bad'); renderer.shakeCamera(0.3); }
@@ -373,10 +419,20 @@ function handleEvents(events) {
   }
 }
 
+/** Партия закончилась — в личную статистику (src/core/stats.js). */
+function recordGame(entry) {
+  const run = runStats ?? newRunStats();
+  addGameStat({
+    at: Date.now(), durationMs: Math.round(run.playMs), apples: run.apples, bonuses: run.bonuses, ...entry,
+  });
+  runStats = null;
+}
+
 function frame(now) {
   const dt = Math.min(now - lastTime, 250);
   lastTime = now;
 
+  if (app.is(PLAYING) && runStats) runStats.playMs += dt;
   if (app.is(PLAYING)) {
     handleEvents(mode.update(dt));
     // Подсказки первых партий: что-то новое впервые появилось на поле.
@@ -397,6 +453,7 @@ function frame(now) {
     mode.needsSetup = false;
   }
   if (view) renderer.render(view, mode.myIndex);
+  renderSnakeStatus(view && app.is(PLAYING) ? mode.hud() : null, renderer.headScreen);
   requestAnimationFrame(frame);
 }
 
@@ -448,6 +505,7 @@ function handleNetMessage(msg, connection) {
       if (action.events.length) handleEvents(action.events);
       break;
     case 'round':
+      runStats = newRunStats(); // онлайн-раунд (и реванш) — новая партия в статистике
       app.go(COUNTDOWN);
       show(null);
       audio.startMusic();
@@ -496,6 +554,7 @@ const feedback = createFeedbackScreen({ leaderboard, version: APP_VERSION, setti
 const profileScreen = createProfileScreen({
   settings,
   leaderboard,
+  statsBrief: () => statsScreen.brief(),
   achievementsSummary: () => {
     const list = achievements.list();
     return { open: list.filter((a) => a.unlockedAt).length, total: list.length };
@@ -611,7 +670,8 @@ for (const type of ['pointerup', 'pointercancel']) {
 
 // Кнопки-стрелки на экране (настройка «Управление → Кнопки на экране»).
 function updateDpad() {
-  const visible = settings.controls === 'buttons' && isTouchDevice() && app.is(PLAYING, COUNTDOWN);
+  const visible = (settings.controls === 'buttons' && isTouchDevice() && app.is(PLAYING, COUNTDOWN))
+    || screen === 'dpad-layout';
   $('#dpad').classList.toggle('hidden', !visible);
   if (!visible) dpadControl.release();
   fitSceneToTutorial();
@@ -620,6 +680,7 @@ const dpadControl = setupDpad($('#dpad'), (dir) => {
   audio.unlock();
   steer('touch', dir, 'buttons');
 });
+const dpadEditor = createDpadEditor({ root: $('#dpad'), settings, save: saveSettings });
 
 // Повернули телефон в меню — поле на фоне тоже разворачивается (вертикальное ↔ горизонтальное).
 window.addEventListener('resize', () => {
@@ -692,6 +753,16 @@ const ACTIONS = {
     if (profileFrom === 'settings') settingsScreen.render();
     show(profileFrom);
   },
+  stats: () => {
+    show('stats'); // сначала показать: ширину графика берём у видимого экрана
+    statsScreen.render();
+    $('#screen-stats').scrollTop = 0;
+  },
+  'stats-back': () => {
+    statsScreen.hideTip();
+    profileScreen.render();
+    show('profile');
+  },
   'profile-achievements': () => {
     renderAchievements(achievements);
     backTo = 'profile';
@@ -705,8 +776,21 @@ const ACTIONS = {
     if (installFrom === 'menu') toMenu();
     else show(installFrom);
   },
+  'welcome-later': () => {}, // карточка уже закрыта общим обработчиком; плашка в меню остаётся
+  'dpad-layout': () => {
+    show('dpad-layout');
+    updateDpad();
+    dpadEditor.open();
+  },
+  'dpad-done': () => {
+    dpadEditor.close();
+    show('settings');
+    updateDpad();
+  },
+  'dpad-reset': () => dpadEditor.reset(),
   'whats-new': () => whatsNew.showHistory(),
   update: () => updater.applyUpdate(),
+  'check-update': () => whatsNew.checkForUpdate(() => updater.checkNow()),
   back: () => {
     if (backTo === 'menu') toMenu();
     else show(backTo);
@@ -719,6 +803,7 @@ const ACTIONS = {
 document.addEventListener('click', (e) => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!Object.hasOwn(ACTIONS, action ?? '')) return;
+  welcome.dismiss();
   audio.unlock();
   audio.play('click');
   ACTIONS[action](e);
@@ -780,8 +865,12 @@ if (invited) {
   openOnline();
   lobby.joinInvite(invited);
 } else if (firstVisit) {
-  // Совсем новый игрок — сразу обучение (его можно пропустить).
-  startTutorial();
+  // Совсем новый игрок: сначала смотрит, куда попал. Через пару секунд — карточка с предложением
+  // обучения и подсветка главных кнопок. Запоминаем, что показали: при следующем заходе в меню
+  // остаётся только плашка «Вы ещё не прошли обучение».
+  tutorial.shown = true;
+  saveTutorial(tutorial);
+  welcome.start(() => screen === 'menu' && app.is(MENU));
 }
 // Игра обновилась с прошлого раза — один раз показать, что нового (только поверх меню).
 whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu', returning: !firstVisit });
