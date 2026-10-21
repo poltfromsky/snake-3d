@@ -15,6 +15,7 @@
  *   GET  /api/records/player?name=… — лучшие результаты ника во всех режимах и скоростях с местом
  *                                     в таблице: [{mode, speed, score, length, platform, place}] (профиль игрока)
  *   POST /api/account/create|login|recover|password — профиль с паролем и кодом восстановления (server/src/account.js)
+ *   POST /api/stats/sync|compare|delete — личная статистика профиля на всех устройствах (server/src/stats.js)
  *   POST /api/feedback              — оставить отзыв (читает только владелец, в D1)
  *   GET  /api/health                — проверка, что сервер жив
  */
@@ -23,6 +24,7 @@ import {
 } from '../../src/core/validate.js';
 import { checkRun, RUN_TTL_MS } from '../../src/core/fair-play.js';
 import { createAccountHandlers } from './account.js';
+import { createStatsHandlers } from './stats.js';
 
 export { Room } from './room.js';
 
@@ -65,9 +67,9 @@ function json(data, status, request, env) {
   });
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return null;
+  if (text.length > maxBytes) return null;
   try {
     return JSON.parse(text);
   } catch {
@@ -330,6 +332,9 @@ async function addFeedback(request, env) {
 const account = createAccountHandlers({
   json, readJson, clientHash, sha256, refuse, claimNick,
 });
+const stats = createStatsHandlers({
+  json, readJson, sha256, refuse,
+});
 
 export default {
   async fetch(request, env) {
@@ -362,6 +367,9 @@ export default {
       if (url.pathname === '/api/account/login' && request.method === 'POST') return await account.login(request, env);
       if (url.pathname === '/api/account/recover' && request.method === 'POST') return await account.recover(request, env);
       if (url.pathname === '/api/account/password' && request.method === 'POST') return await account.changePassword(request, env);
+      if (url.pathname === '/api/stats/sync' && request.method === 'POST') return await stats.sync(request, env);
+      if (url.pathname === '/api/stats/compare' && request.method === 'POST') return await stats.compare(request, env);
+      if (url.pathname === '/api/stats/delete' && request.method === 'POST') return await stats.remove(request, env);
     } catch (err) {
       // В лог — только текст ошибки, без запроса и заголовков (там IP игрока).
       console.error(err?.message ?? 'unknown error');

@@ -248,6 +248,63 @@ reply = await submit(`${nick}n4`, 10, fresh);
 assert.equal(reply.data.code, 'nick_limit', 'четвёртый новый ник за сутки с одного устройства');
 console.log('✔ не больше 3 новых ников в сутки с одного устройства');
 
+// Личная статистика профиля: одна на все устройства, только для вошедших устройств, без дублей.
+const game = (id, extra = {}) => ({
+  id: `e2e-${pwNick}-${id}`, at: Date.now() - 60_000, kind: 'solo', mode: 'classic', speed: 'normal', score: 40, length: 7,
+  durationMs: 50_000, end: 'self', apples: 4, bonuses: { slow: 1, ghost: 0, bad: 0 }, ...extra,
+});
+reply = await post('stats/sync', { name: pwNick, device: deviceE, games: [game(1), game(2, { kind: 'bot', level: 'easy', result: 'win', end: 'wall' })], since: 0 });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+assert.equal(reply.data.accepted, 2);
+assert.equal(reply.data.epoch, 0, 'статистику ещё не удаляли');
+assert.deepEqual(reply.data.games.map((g) => g.id).sort(), [game(1).id, game(2).id].sort());
+assert.equal(reply.data.games.find((g) => g.kind === 'bot').result, 'win');
+let cursor = reply.data.cursor;
+// Второе устройство профиля (вошло по паролю) получает партии первого и добавляет свою.
+reply = await post('stats/sync', { name: pwNick, device: deviceC, games: [game(3, { mode: 'walls', score: 70 })], since: 0 });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+assert.equal(reply.data.total, 3);
+assert.equal(reply.data.games.length, 3, 'второе устройство видит все партии профиля');
+// Повтор той же партии — без дубля; догрузка «с номера» — только новое.
+reply = await post('stats/sync', { name: pwNick, device: deviceE, games: [game(3, { mode: 'walls', score: 70 })], since: cursor });
+assert.equal(reply.data.total, 3, 'повторная отправка не создаёт дубль');
+assert.deepEqual(reply.data.games.map((g) => g.id), [game(3).id], 'с номера — только новые записи');
+cursor = reply.data.cursor;
+assert.deepEqual((await post('stats/sync', { name: pwNick, device: deviceE, games: [], since: cursor })).data.games, []);
+// Мусор отбрасывается, лишнее — отказ.
+reply = await post('stats/sync', { name: pwNick, device: deviceE, games: [{ id: 'x', kind: 'hack' }, game(4, { score: 99999 }), game(5)], since: cursor });
+assert.equal(reply.data.accepted, 1, 'неверные записи не приняты');
+reply = await post('stats/sync', { name: pwNick, device: deviceE, games: Array.from({ length: 51 }, (_, i) => game(100 + i)), since: 0 });
+assert.equal(reply.status, 400, 'не больше 50 партий за раз');
+// Чужое устройство и ник без профиля — одинаковый отказ.
+reply = await post('stats/sync', { name: pwNick, device: deviceA, games: [game(6)], since: 0 });
+assert.equal(reply.status, 403);
+assert.equal(reply.data.code, 'stats_denied');
+const noProfile = await post('stats/sync', { name: nick, device: deviceA, games: [game(7)], since: 0 });
+assert.equal(noProfile.status, 403, 'у ника без профиля статистики на сервере нет');
+assert.equal(noProfile.data.error, reply.data.error, 'ответ не выдаёт, есть ли профиль');
+assert.equal((await post('stats/sync', { name: pwNick, device: 'не ключ', games: [] })).status, 400);
+console.log('✔ статистика профиля: общая для устройств профиля, без дублей, догрузка только нового, чужим — отказ');
+
+reply = await post('stats/compare', { name: pwNick, device: deviceC });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+assert.equal(reply.data.modes.walls.mine, 70, 'свой лучший — из статистики, даже если рекорд не отправляли');
+assert.ok(Number.isInteger(reply.data.modes.classic.others));
+assert.ok('easy' in reply.data.bots && 'claude' in reply.data.bots);
+assert.equal((await post('stats/compare', { name: pwNick, device: deviceA })).status, 403);
+console.log('✔ сравнение с игроками: сводные цифры по режимам и ботам, только своему профилю');
+
+reply = await post('stats/delete', { name: pwNick, device: deviceA });
+assert.equal(reply.status, 403, 'чужое устройство не удалит');
+reply = await post('stats/delete', { name: pwNick, device: deviceE });
+assert.equal(reply.status, 200);
+assert.equal(reply.data.deleted, 4);
+assert.equal(reply.data.epoch, 1, 'новое поколение — остальные устройства сотрут у себя старые партии');
+reply = await post('stats/sync', { name: pwNick, device: deviceC, games: [], since: cursor });
+assert.equal(reply.data.total, 0);
+assert.equal(reply.data.epoch, 1, 'второе устройство узнаёт об удалении при синхронизации');
+console.log('✔ игрок сам удаляет статистику профиля; удаление доходит до всех его устройств');
+
 const ghost = client('ZZZZZ', 'ghost');
 const gerr = await ghost.waitFor((m) => m.t === 'error');
 console.log('✔ несуществующая комната:', gerr.text);

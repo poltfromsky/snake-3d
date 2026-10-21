@@ -16,8 +16,6 @@ const TUTORIAL_KEY = 'snake3d.tutorial.v1';
 const SEEN_VERSION_KEY = 'snake3d.seen-version.v1';
 const PROFILE_KEY = 'snake3d.profile.v1';
 const STATS_KEY = 'snake3d.stats.v1';
-/** Сколько последних партий помнит личная статистика (запись — около 200 байт, всего ~200 КБ). */
-const MAX_GAME_STATS = 1000;
 /** Сколько раз перед «Играть» предлагаем обучение, если его не прошли. Дальше — только плашка в меню. */
 export const TUTORIAL_OFFERS = 3;
 const MAX_HISTORY = 100;
@@ -134,16 +132,16 @@ export function addAttempt(mode, {
 }
 
 /**
- * Личная статистика: записи о партиях на этом устройстве, новые — первыми (формат — src/core/stats.js).
- * Только цифры партий — ни ника, ни устройства; на сервер не уходят.
+ * Личная статистика: партии на этом устройстве и состояние синхронизации с профилем
+ * (формат партии — src/core/stats.js, хранилище и синхронизация — src/net/stats-sync.js).
+ * В партии — только её цифры; у партий профиля — ник профиля (чтобы не смешать профили на одном устройстве).
  */
-export function loadGameStats() {
-  const stats = read(STATS_KEY, null);
-  return Array.isArray(stats?.games) ? stats.games : [];
+export function loadStatsStore() {
+  return read(STATS_KEY, null);
 }
 
-export function addGameStat(entry) {
-  write(STATS_KEY, { v: 1, games: [entry, ...loadGameStats()].slice(0, MAX_GAME_STATS) });
+export function saveStatsStore(store) {
+  write(STATS_KEY, store);
 }
 
 /**

@@ -541,6 +541,7 @@
     <div class="panel stats-panel">
       <h2>Моя статистика</h2>
       <p class="subtitle" id="stats-note"></p>
+      <p class="stats-sync" id="stats-sync" role="status" aria-live="polite"></p>
       <div class="stats-kpis" id="stats-kpis"></div>
 
       <section class="stats-block">
@@ -572,11 +573,17 @@
         <p class="stats-text" id="stats-activity-text"></p>
       </section>
 
+      <section class="stats-block hidden" id="stats-compare-block">
+        <h3>Сравнение с игроками</h3>
+        <div class="stats-duels" id="stats-compare"></div>
+      </section>
+
       <details class="stats-block stats-table-wrap">
         <summary>Последние партии списком</summary>
         <div id="stats-table"></div>
       </details>
 
+      <button class="btn danger-link hidden" id="stats-delete" type="button">Удалить статистику профиля</button>
       <button class="btn" data-action="stats-back">Назад</button>
     </div>
   </section>

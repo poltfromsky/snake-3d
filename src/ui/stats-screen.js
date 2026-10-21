@@ -2,7 +2,9 @@
  * Экран «Моя статистика» (из профиля): плитки с главными цифрами, график прогресса,
  * почему заканчиваются партии, боты и онлайн, календарь активности и все партии списком.
  *
- * Считает всё src/core/stats.js, здесь — только отрисовка. Графики — свой SVG в цвете темы
+ * Считает всё src/core/stats.js, здесь — только отрисовка. С профилем статистика общая для всех его
+ * устройств (src/net/stats-sync.js): здесь — строка о синхронизации, сравнение с другими игроками
+ * и удаление статистики профиля. Графики — свой SVG в цвете темы
  * (--accent): один ряд данных, тонкие линии, подписи у рекорда и последней партии, подсказка
  * при наведении или касании. Каждое число есть и текстом (плитки, строки, таблица) — график
  * ничего не прячет. Тексты — только через textContent.
@@ -11,7 +13,7 @@ import { BOT_LEVELS } from '../core/bot.js';
 import {
   formatPlayTime, MODES_ORDER, plural, SPEEDS_ORDER, summarizeStats,
 } from '../core/stats.js';
-import { loadGameStats, loadHistory } from '../storage.js';
+import { loadHistory } from '../storage.js';
 import { $, markActive } from './dom.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -67,10 +69,23 @@ function niceMax(max) {
   return 10 * step;
 }
 
-export function createStatsScreen() {
+/** Сравнение показываем, только когда есть с кем сравнивать (то же число — на сервере). */
+const MIN_COMPARE = 3;
+const DELETE_CONFIRM_MS = 5000;
+
+/**
+ * @param {object} deps
+ * @param {() => object[]} deps.games партии для показа (профиля или без профиля)
+ * @param {() => ({key: string, name: string} | null)} deps.owner кто вошёл в профиль
+ * @param {ReturnType<import('../net/stats-sync.js').createStatsSync>} deps.sync синхронизация
+ */
+export function createStatsScreen({ games, owner, sync }) {
   let summary = null;
   let modeTab = 'classic';
+  let deleteArmedUntil = 0;
+  let compareRequest = 0;
   const tip = $('#stats-tip');
+  const visible = () => !$('#screen-stats').classList.contains('hidden');
 
   function showTip(text, x, y) {
     tip.textContent = text;
@@ -336,11 +351,94 @@ export function createStatsScreen() {
       : 'За последние 12 недель партий нет.';
   }
 
+  /* ---------- Синхронизация и сравнение ---------- */
+  const syncTime = (ms) => new Date(ms).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  function renderSync(state = sync.state) {
+    const who = owner();
+    const line = $('#stats-sync');
+    line.classList.toggle('error', ['offline', 'limited', 'denied'].includes(state.status) && Boolean(who));
+    $('#stats-delete').classList.toggle('hidden', !who);
+    if (!who) {
+      line.textContent = 'Без профиля статистика только на этом устройстве. Войдите в профиль — и она станет общей для всех ваших устройств.';
+      return;
+    }
+    const texts = {
+      syncing: 'Синхронизируем с другими устройствами…',
+      synced: `Общая для всех ваших устройств · обновлено в ${syncTime(state.at ?? Date.now())}`,
+      offline: 'Нет связи с сервером игры — партии с этого устройства отправятся позже сами (из России — с VPN).',
+      limited: 'Слишком много партий за час — остальные отправятся позже сами.',
+      denied: 'Это устройство больше не допущено к профилю — войдите в профиль снова.',
+    };
+    line.textContent = `Профиль «${who.name}». ${texts[state.status] ?? 'Общая для всех ваших устройств.'}`;
+  }
+
+  /** Строка сравнения: подпись, шкала «лучше, чем у такой доли игроков» и пояснение. */
+  function compareRow(label, share, text) {
+    const row = el('div', 'stats-duel');
+    const head = el('div', 'stats-duel-head');
+    head.append(el('b', '', label), el('span', '', share === null ? '' : `лучше, чем у ${Math.round(share * 100)} %`));
+    const meter = el('div', 'stats-meter');
+    if (share !== null) {
+      meter.setAttribute('role', 'meter');
+      meter.setAttribute('aria-label', `${label}: лучше, чем у такой доли игроков`);
+      meter.setAttribute('aria-valuemin', '0');
+      meter.setAttribute('aria-valuemax', '100');
+      meter.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+    }
+    const fill = el('i');
+    fill.style.width = `${(share ?? 0) * 100}%`;
+    meter.append(fill);
+    // Не с кем сравнивать — пустая шкала только сбивает с толку.
+    row.append(...(share === null ? [head] : [head, meter]), el('small', 'stats-compare-note', text));
+    return row;
+  }
+
+  async function renderCompare() {
+    const box = $('#stats-compare');
+    const who = owner();
+    $('#stats-compare-block').classList.toggle('hidden', !who);
+    if (!who) return;
+    const id = ++compareRequest;
+    box.replaceChildren(el('p', 'stats-empty', 'Сравниваем…'));
+    let data;
+    try {
+      data = await sync.compare();
+    } catch {
+      if (id === compareRequest) box.replaceChildren(el('p', 'stats-empty', 'Сравнение появится, когда будет связь с сервером игры (из России — с VPN).'));
+      return;
+    }
+    if (id !== compareRequest || !data) return;
+    const rows = [];
+    for (const mode of MODES_ORDER) {
+      const m = data.modes?.[mode];
+      if (!m || m.mine === null || m.mine === undefined) continue;
+      const enough = m.others >= MIN_COMPARE;
+      rows.push(compareRow(
+        `${MODE_LABELS[mode]} · рекорд ${m.mine}`,
+        enough ? m.below / m.others : null,
+        enough ? `Сравнение с лучшими результатами ${m.others} ${plural(m.others, ['игрока', 'игроков', 'игроков'])} в общей таблице`
+          : 'Пока мало игроков для сравнения',
+      ));
+    }
+    for (const [level, b] of Object.entries(data.bots ?? {})) {
+      if (b.mine === null || b.mine === undefined) continue;
+      const enough = b.others >= MIN_COMPARE;
+      rows.push(compareRow(
+        `${BOT_LEVELS[level]?.name ?? level} · побед ${percent(b.mine)}`,
+        enough ? b.below / b.others : null,
+        enough ? `Доля побед — среди ${b.others} ${plural(b.others, ['игрока', 'игроков', 'игроков'])}, сыгравших с ботом хотя бы 3 раза`
+          : 'Пока мало игроков для сравнения',
+      ));
+    }
+    box.replaceChildren(...(rows.length ? rows : [el('p', 'stats-empty', 'Сыграйте одиночную партию или 3 партии с ботом — и появится сравнение.')]));
+  }
+
   /* ---------- Таблица ---------- */
   function renderTable() {
-    const games = loadGameStats().slice(0, 30);
+    const list = games().slice(0, 30);
     const box = $('#stats-table');
-    if (!games.length) {
+    if (!list.length) {
       box.replaceChildren(el('p', 'stats-empty', 'Подробные записи появятся после первой партии.'));
       return;
     }
@@ -350,7 +448,7 @@ export function createStatsScreen() {
     table.append(el('thead'));
     table.tHead.append(head);
     const body = el('tbody');
-    for (const g of games) {
+    for (const g of list) {
       const tr = el('tr');
       const what = g.kind === 'solo'
         ? `${MODE_LABELS[g.mode] ?? ''}${g.speed ? `, ${SPEED_LABELS[g.speed]?.toLowerCase() ?? ''}` : ''}`
@@ -363,11 +461,22 @@ export function createStatsScreen() {
     box.replaceChildren(table);
   }
 
+  /** Партии для подсчёта: с профилем старая история уже стала партиями профиля (stats-sync). */
+  const compute = () => summarizeStats({ games: games(), history: owner() ? {} : loadHistory() });
+
+  function resetDelete() {
+    deleteArmedUntil = 0;
+    $('#stats-delete').textContent = 'Удалить статистику профиля';
+  }
+
   function renderAll() {
-    summary = summarizeStats({ games: loadGameStats(), history: loadHistory() });
-    $('#stats-note').textContent = summary.detailedSince
-      ? `На этом устройстве. Причины проигрышей, боты и время в игре считаются с ${new Date(summary.detailedSince).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}.`
-      : 'На этом устройстве. Сыграйте партию — и здесь появятся цифры.';
+    summary = compute();
+    const since = summary.detailedSince
+      ? ` Причины проигрышей, боты и время в игре считаются с ${new Date(summary.detailedSince).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}.`
+      : ' Сыграйте партию — и здесь появятся цифры.';
+    $('#stats-note').textContent = `${owner() ? 'Все ваши устройства.' : 'На этом устройстве.'}${since}`;
+    renderSync();
+    resetDelete();
     // Открываем на режиме, в котором больше всего партий.
     modeTab = MODES_ORDER.reduce((m, k) => (summary.progress[k].games > summary.progress[m].games ? k : m), modeTab);
     renderKpis(summary);
@@ -377,6 +486,25 @@ export function createStatsScreen() {
     renderActivity(summary);
     renderTable();
   }
+
+  $('#stats-delete').addEventListener('click', async () => {
+    // Первое нажатие — предупреждение, второе (в течение 5 секунд) — удаление.
+    if (Date.now() > deleteArmedUntil) {
+      deleteArmedUntil = Date.now() + DELETE_CONFIRM_MS;
+      $('#stats-delete').textContent = 'Точно удалить? Партии исчезнут на всех устройствах — нажмите ещё раз';
+      return;
+    }
+    resetDelete();
+    try {
+      await sync.deleteAll();
+      renderAll();
+      renderCompare();
+      $('#stats-sync').textContent = 'Статистика профиля удалена: на сервере и здесь сразу, на остальных устройствах — при их синхронизации.';
+    } catch {
+      $('#stats-sync').textContent = 'Не удалось удалить — нет связи с сервером игры (из России — с VPN). Попробуйте позже.';
+      $('#stats-sync').classList.add('error');
+    }
+  });
 
   $('#stats-mode').addEventListener('click', (e) => {
     const value = e.target.closest('button')?.dataset.mode;
@@ -391,11 +519,26 @@ export function createStatsScreen() {
   $('#screen-stats').addEventListener('scroll', hideTip, { passive: true });
 
   return {
-    render: renderAll,
+    /** Открыли экран: сразу показать что есть, потом синхронизировать и сравнить. */
+    render() {
+      renderAll();
+      if (owner()) {
+        sync.syncNow();
+        renderCompare();
+      } else {
+        $('#stats-compare-block').classList.add('hidden');
+      }
+    },
+    /** Синхронизация сообщила о себе: строка состояния, а получили новое — пересчитать экран. */
+    syncState(state) {
+      if (!visible()) return;
+      if (state.status === 'synced') renderAll();
+      else renderSync(state);
+    },
     hideTip,
     /** Коротко для «Моего профиля»: время в игре и серия. */
     brief() {
-      const s = summarizeStats({ games: loadGameStats(), history: loadHistory() });
+      const s = compute();
       return { playTime: formatPlayTime(s.totals.playMs), streak: s.activity.streak, games: s.totals.games };
     },
   };

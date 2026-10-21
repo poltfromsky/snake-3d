@@ -15,11 +15,12 @@ import { API_BASE, APP_VERSION } from './config.js';
 import { E2E, exposeForTests } from './e2e.js';
 import { registerServiceWorker, setupInstall } from './pwa.js';
 import {
-  addGameStat, isNewPlayer, loadSettings, loadTutorial, saveSettings, saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
+  deviceKey, isNewPlayer, loadHistory, loadProfile, loadSettings, loadStatsStore, loadTutorial, saveSettings, saveStatsStore,
+  saveTutorial, SPEED_FACTORS, TUTORIAL_OFFERS,
 } from './storage.js';
 import { TutorialMode } from './modes/tutorial-mode.js';
 import { SwipeTracker } from './ui/swipe.js';
-import { slowerSpeed } from './core/validate.js';
+import { nameKey, slowerSpeed } from './core/validate.js';
 import { setupDpad } from './ui/dpad.js';
 import { createDpadEditor } from './ui/dpad-layout.js';
 import { controlDevice } from './tutorial/steps.js';
@@ -43,6 +44,7 @@ import { createProfileScreen } from './ui/profile-screen.js';
 import { isTouchDevice, WakeLock } from './ui/device.js';
 import { createFirstHints } from './ui/first-hints.js';
 import { createTutorialUI } from './ui/tutorial-ui.js';
+import { createStatsSync } from './net/stats-sync.js';
 import { createStatsScreen } from './ui/stats-screen.js';
 import { createWelcome } from './ui/welcome.js';
 import { renderIcons } from './ui/icons.js';
@@ -84,7 +86,27 @@ const achievementToasts = new AchievementToasts(
 
 const wakeLock = new WakeLock();
 const welcome = createWelcome();
-const statsScreen = createStatsScreen();
+/** Кто вошёл в профиль на этом устройстве: его ник — хозяин статистики (src/net/stats-sync.js). */
+function statsOwner() {
+  const profile = loadProfile();
+  const name = settings.playerName;
+  if (!profile || !name || profile.nameKey !== nameKey(name) || !leaderboard.enabled) return null;
+  return { key: profile.nameKey, name, device: deviceKey() };
+}
+const statsSync = createStatsSync({
+  load: loadStatsStore,
+  save: saveStatsStore,
+  history: loadHistory,
+  owner: statsOwner,
+  post: (path, body) => leaderboard.request(path, { method: 'POST', body }),
+  onState: (state) => statsScreen.syncState(state),
+});
+// Экран создаётся сразу после синхронизации; состояние она сообщает только по ходу работы (позже).
+const statsScreen = createStatsScreen({
+  games: () => statsSync.games(),
+  owner: statsOwner,
+  sync: statsSync,
+});
 // Что зависит только от экрана, а не от того, как в него попали, — здесь.
 const app = new StateMachine(MENU, (_from, to) => {
   // Пока идёт партия, телефон не гасит экран.
@@ -419,10 +441,10 @@ function handleEvents(events) {
   }
 }
 
-/** Партия закончилась — в личную статистику (src/core/stats.js). */
+/** Партия закончилась — в личную статистику (src/core/stats.js); с профилем — и на все его устройства. */
 function recordGame(entry) {
   const run = runStats ?? newRunStats();
-  addGameStat({
+  statsSync.record({
     at: Date.now(), durationMs: Math.round(run.playMs), apples: run.apples, bonuses: run.bonuses, ...entry,
   });
   runStats = null;
@@ -563,6 +585,7 @@ const profileScreen = createProfileScreen({
   onChange: () => {
     settingsScreen.render();
     updateProfileButton();
+    statsSync.ownerChanged(); // вошли — статистика профиля синхронизируется, вышли — убирается с устройства
   },
 });
 /** Откуда открыли профиль: туда и ведёт «Назад» (меню или настройки). */
@@ -694,6 +717,8 @@ window.addEventListener('resize', () => {
 // Свернули вкладку — ставим паузу, чтобы змейка не разбилась без игрока.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
+  // Вернулись в игру — подтянуть партии, сыгранные за это время на других устройствах профиля.
+  else if (statsOwner()) statsSync.syncNow();
 });
 
 // Закрыли вкладку посреди онлайн-партии — сразу выходим из комнаты, друг узнает об этом.
@@ -795,8 +820,9 @@ const ACTIONS = {
     if (backTo === 'menu') toMenu();
     else show(backTo);
     if (backTo === 'over') saver.refreshName();
-    // Ник могли поменять в настройках — подпись кнопки профиля в меню тоже.
+    // Ник могли поменять в настройках — подпись кнопки профиля в меню тоже, и хозяина статистики.
     updateProfileButton();
+    statsSync.ownerChanged();
   },
 };
 
@@ -874,5 +900,8 @@ if (invited) {
 }
 // Игра обновилась с прошлого раза — один раз показать, что нового (только поверх меню).
 whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu', returning: !firstVisit });
+
+// Вошли в профиль раньше — статистика профиля: отправить накопленное, подтянуть с других устройств.
+if (statsOwner()) statsSync.syncNow();
 
 requestAnimationFrame(frame);

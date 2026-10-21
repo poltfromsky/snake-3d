@@ -884,6 +884,11 @@ kbd {
 .stats-panel { gap: 14px; text-align: left; }
 .stats-panel h2, .stats-panel > .subtitle { text-align: center; }
 .stats-panel > .subtitle { margin: 0; font-size: 13px; }
+/* Строка синхронизации профиля: всё в порядке — спокойная, нет связи — заметнее. */
+.stats-sync { margin: 0; padding: 8px 12px; font-size: 12px; color: var(--muted); text-align: center; border: 1px solid var(--panel-border); border-radius: 10px; }
+.stats-sync.error { color: var(--text); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.stats-compare-note { grid-column: 1 / -1; text-align: left !important; }
+.btn.danger-link { color: color-mix(in srgb, var(--danger) 80%, var(--text)); background: transparent; }
 .stats-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .stats-kpi, .stats-speed {
   display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px;

@@ -477,6 +477,70 @@ test.describe('профиль с паролем', () => {
   });
 });
 
+test.describe('статистика профиля на всех устройствах', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('партия с одного устройства видна на другом; удаление доходит до обоих', async ({ page, browser }, testInfo) => {
+    test.setTimeout(150_000); // два раза считается пароль (600 000 итераций)
+    const nick = `Стат${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const password = 'пароль-для-статистики-1';
+    const sent = (p) => p.evaluate(() => (JSON.parse(globalThis.localStorage.getItem('snake3d.stats.v1') ?? '{}').games ?? [])
+      .map((g) => ({ id: g.id, owner: g.owner, sent: g.sent })));
+
+    // Устройство 1: профиль и одна партия («Стены»: без поворотов — в стену).
+    const errors = await openGame(page, { playerName: nick });
+    await uniqueSenderForRecords(page);
+    await page.locator('#screen-menu [data-action="profile"]').click();
+    await page.locator('#profile-new-pass').fill(password);
+    await page.locator('#profile-new-pass2').fill(password);
+    await page.locator('#profile-create button[type=submit]').click();
+    await expect(page.locator('#profile-code')).toBeVisible({ timeout: 30_000 });
+    await page.locator('#profile-code-saved').check();
+    await page.locator('#profile-code-done').click();
+    await page.locator('#screen-profile [data-action="profile-back"]').click();
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await expect(page.locator('#screen-over')).toBeVisible();
+    // Партия ушла на сервер (через пару секунд после конца).
+    await expect.poll(async () => (await sent(page)).filter((g) => g.owner && g.sent).length, { timeout: 20_000 }).toBe(1);
+    const [gameId] = (await sent(page)).map((g) => g.id);
+
+    // Устройство 2: вход по паролю — статистика та же.
+    const other = await browser.newContext({ serviceWorkers: 'block' });
+    try {
+      const phone = await other.newPage();
+      const phoneErrors = await openGame(phone, { playerName: '' });
+      await uniqueSenderForRecords(phone);
+      await phone.locator('#screen-menu [data-action="profile"]').click();
+      await phone.locator('#profile-tabs [data-tab="login"]').click();
+      await phone.locator('#profile-login-name').fill(nick);
+      await phone.locator('#profile-login-pass').fill(password);
+      await phone.locator('#profile-login button[type=submit]').click();
+      await expect(phone.locator('#profile-me')).toBeVisible({ timeout: 30_000 });
+      await phone.locator('#btn-profile-stats').click();
+      await expect(phone.locator('#stats-sync')).toContainText('Общая для всех ваших устройств', { timeout: 20_000 });
+      await expect(phone.locator('#stats-kpis .stats-kpi').first()).toContainText('1');
+      await expect(phone.locator('#stats-compare-block')).toBeVisible();
+      expect((await sent(phone)).map((g) => g.id)).toEqual([gameId]);
+
+      // Удаление с устройства 2 (два нажатия) — исчезает и здесь, и на устройстве 1.
+      await phone.locator('#stats-delete').click();
+      await expect(phone.locator('#stats-delete')).toContainText('Точно удалить');
+      await phone.locator('#stats-delete').click();
+      await expect(phone.locator('#stats-sync')).toContainText('удалена');
+      await expect(phone.locator('#stats-kpis .stats-kpi').first()).toContainText('0');
+      expect(phoneErrors).toEqual([]);
+    } finally {
+      await other.close();
+    }
+    await page.locator('#screen-over [data-action="menu"]').click();
+    await page.locator('#screen-menu [data-action="profile"]').click();
+    await page.locator('#btn-profile-stats').click();
+    await expect.poll(async () => (await sent(page)).length, { timeout: 20_000 }).toBe(0);
+    await expect(page.locator('#stats-kpis .stats-kpi').first()).toContainText('0');
+    expect(errors).toEqual([]);
+  });
+});
+
 test('глазок у пароля: показывает только своё поле, по умолчанию всё скрыто, есть подсказка про VPN', async ({ page }) => {
   const errors = await openGame(page, { playerName: 'Питон' });
   await page.locator('#screen-menu [data-action="profile"]').click();
