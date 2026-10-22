@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Заставка — просмотр</title>
+  <!-- Те же адреса Three.js, что и в index.html. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #10162b; color: #dfe6ff; font: 16px system-ui, sans-serif; }
+    main { display: grid; place-items: center; height: 100%; text-align: center; }
+    button { font: inherit; padding: 12px 20px; border-radius: 12px; border: 1px solid #3cffa4; background: #0b1022; color: #3cffa4; cursor: pointer; margin: 4px; }
+    p { opacity: 0.7; max-width: 32ch; }
+  </style>
+</head>
+<body>
+  <main>
+    <div>
+      <p>Здесь будет игра. Заставка показывается при открытии; нажатие или клавиша — пропустить. При самом первом открытии браузер не даёт звук без нажатия — для этого кнопка «Включить звук» на заставке.</p>
+      <button id="again" type="button">Показать ещё раз</button>
+      <button id="loop" type="button">Без таймера (до нажатия)</button>
+    </div>
+  </main>
+  <script type="module">
+    import { showSplash } from '../../src/ui/splash.js';
+
+    showSplash();
+    document.getElementById('again').addEventListener('click', () => showSplash());
+    document.getElementById('loop').addEventListener('click', () => showSplash({ minDuration: 0 }));
+  </script>
+</body>
+</html>

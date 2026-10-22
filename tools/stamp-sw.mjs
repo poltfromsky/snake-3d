@@ -33,6 +33,8 @@ const list = [
   ...await files('src', (name) => name.endsWith('.js')),
   ...await files('assets/icons', (name) => /\.(png|svg)$/.test(name)),
   ...await files('assets/medals', (name) => name.endsWith('.png')),
+  // Обложка при входе (src/ui/intro.js) — её видит каждый вернувшийся игрок, в том числе без сети.
+  ...await files('assets/splash', (name) => name.endsWith('.webp')),
 ].sort();
 
 const path = join(ROOT, 'sw.js');

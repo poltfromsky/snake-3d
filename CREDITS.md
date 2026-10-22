@@ -11,6 +11,12 @@
 - [Phosphor Icons](https://phosphoricons.com) 2.1.1 (пакет `@phosphor-icons/core`, толщина bold) — MIT License, Copyright (c) 2023 Phosphor Icons. Иконки встроены в `src/ui/icons.js` скриптом `tools/build-icons.mjs`; текст лицензии — в шапке этого файла. Пакет нужен только для сборки, в игру не загружается.
 - Значок приложения и медали достижений нарисованы 3D-рендером самой игры (`tools/render-art.mjs`, сцены в `tools/art/scenes.js`).
 
+## Заставка
+
+- Руки на заставке — фрагмент фрески Микеланджело «Сотворение Адама» (Сикстинская капелла, около 1512 г.), общественное достояние. Файл [Creation of Adam (Michelangelo) Detail.jpg](https://commons.wikimedia.org/wiki/File:Creation_of_Adam_(Michelangelo)_Detail.jpg) с Wikimedia Commons, скачан 2026-10-21, SHA-256 `24638860d92ea0dbb0ccfd14ef07b216ab1ea7245ce4e2ebc38ea5732e39f28a`. Руки вырезаны со штукатурки скриптом `tools/splash/cut-hands.py` и сохранены в `assets/splash/hand-adam.webp`, `assets/splash/hand-god.webp`.
+- Музыка заставки синтезируется в коде (`src/audio/splash-music.js`, Web Audio API), файлы не используются.
+- Идея композиции (руки и вращающийся значок между ними) — по мотивам ролика-баннера, ролик и его графика не использовались.
+
 ## Звук
 
 - Звуковые эффекты синтезируются в коде (Web Audio API), файлы не используются.

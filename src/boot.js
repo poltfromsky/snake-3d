@@ -21,7 +21,25 @@ function webglAvailable() {
   }
 }
 
+/**
+ * Вступление (src/ui/intro.js). Новому игроку: «Нажми, чтобы начать» → заставка → обложка → обучение.
+ * Вернувшемуся: сразу обложка, нажатие — в меню. Игра грузится позади; main.js ждёт ответ
+ * в globalThis.__snakeIntro. Не показываем в автотестах (?e2e) и по ссылке-приглашению (?room).
+ * Для проверки: ?intro — вступление новичка всегда, ?intro=fast — его короткая версия,
+ * ?intro=back — обложка вернувшегося.
+ */
+async function startIntro() {
+  const params = new URLSearchParams(globalThis.location.search);
+  const forced = params.get('intro');
+  if (forced === null && (params.has('e2e') || params.has('room'))) return;
+  const { isNewPlayer } = await import('./storage.js');
+  const returning = forced === null ? !isNewPlayer() : forced === 'back';
+  const { playIntro } = await import('./ui/intro.js');
+  globalThis.__snakeIntro = playIntro({ fast: forced === 'fast', returning });
+}
+
 if (webglAvailable()) {
+  await startIntro();
   await import('./main.js');
 } else {
   for (const screen of document.querySelectorAll('.screen')) screen.classList.add('hidden');

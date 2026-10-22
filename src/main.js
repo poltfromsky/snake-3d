@@ -913,8 +913,14 @@ if (invited) {
   // остаётся только плашка «Вы ещё не прошли обучение».
   tutorial.shown = true;
   saveTutorial(tutorial);
-  welcome.start(() => screen === 'menu' && app.is(MENU));
+  // Со вступлением (src/ui/intro.js) карточка не нужна: выбор «обучение или меню» — на его обложке.
+  if (!globalThis.__snakeIntro) welcome.start(() => screen === 'menu' && app.is(MENU));
 }
+// Вступление: на обложке выбрали «Начать обучение» — сразу обучение. «Пропустить» — просто меню:
+// игрок уже отказался, карточку «Впервые здесь?» не повторяем, остаётся плашка про обучение.
+globalThis.__snakeIntro?.then((choice) => {
+  if (choice === 'tutorial') startTutorial();
+});
 // Игра обновилась с прошлого раза — один раз показать, что нового (только поверх меню).
 whatsNew.afterStart({ canShow: () => !invited && app.is(MENU) && screen === 'menu', returning: !firstVisit });
 
