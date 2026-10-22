@@ -146,12 +146,16 @@ export function saveStatsStore(store) {
 
 /**
  * Обучение: показывали ли, прошёл ли, сколько раз предлагали перед игрой и какие
- * подсказки первых партий уже видел. { shown, done, offers, hints: {bad: true, ...} }
+ * подсказки первых партий уже видел, убрал ли плашку в меню. { shown, done, offers, bannerOff, hints: {bad: true, ...} }
  */
 export function loadTutorial() {
   const t = read(TUTORIAL_KEY, null);
   return {
-    shown: Boolean(t?.shown), done: Boolean(t?.done), offers: Number(t?.offers) || 0, hints: { ...t?.hints },
+    shown: Boolean(t?.shown),
+    done: Boolean(t?.done),
+    offers: Number(t?.offers) || 0,
+    bannerOff: Boolean(t?.bannerOff), // нажал «Пропустить обучение» или закрыл плашку — плашка в меню больше не нужна
+    hints: { ...t?.hints },
   };
 }
 

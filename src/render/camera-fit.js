@@ -49,9 +49,11 @@ export function fovFor(aspect) {
  *   back — куда от центра поля отступает камера (низ экрана), up — верх экрана для камеры сверху.
  */
 export function cameraLayout({
-  aspect, field, focusIndex = 0, mode = 'angled',
+  aspect, field, focusIndex = 0, mode = 'angled', screenAspect = aspect,
 }) {
-  const turn = quarterTurn(aspect, field, focusIndex);
+  // Куда повернуть поле, решает весь экран, а не область под поле: когда поле поднято над
+  // кнопками-стрелками, область почти квадратная, но экран по-прежнему вертикальный.
+  const turn = quarterTurn(screenAspect, field, focusIndex);
   const fov = fovFor(aspect);
   // Повёрнутое поле: по вертикали экрана идёт его ширина.
   const across = turn ? field.height : field.width; // по горизонтали экрана

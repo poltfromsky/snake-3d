@@ -432,7 +432,11 @@ export class SceneRenderer {
   updateLayout() {
     if (!this.size) return;
     this.layout = cameraLayout({
-      aspect: this.camera.aspect, field: this.size, focusIndex: this.focusIndex, mode: this.cameraMode,
+      aspect: this.camera.aspect,
+      screenAspect: window.innerWidth / window.innerHeight,
+      field: this.size,
+      focusIndex: this.focusIndex,
+      mode: this.cameraMode,
     });
     // Туман зависит от того, насколько далеко камера: иначе на узком экране
     // отъехавшая камера «топила» поле в темноте.

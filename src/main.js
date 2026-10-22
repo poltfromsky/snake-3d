@@ -155,20 +155,23 @@ function setMode(next) {
 }
 
 /**
- * Обучение: карточка с заданием сверху и кнопки-стрелки снизу не должны закрывать поле —
- * оно рисуется в оставшейся между ними области.
+ * Поле не должно прятаться под пальцами и карточкой: оно рисуется в области между ними.
+ *   - обучение: карточка с заданием сверху и кнопки-стрелки снизу;
+ *   - обычная игра с «Кнопками на экране»: сдвиг вверх, над крестом (раньше крест закрывал нижнюю часть поля).
+ * Крест сбоку или выше середины экрана (своё расположение) поле не сдвигает.
  */
-function fitSceneToTutorial() {
-  if (mode.kind !== 'tutorial') return;
+function fitSceneToControls() {
+  const dpad = $('#dpad');
+  const dpadTop = dpad.getBoundingClientRect().top;
+  const below = !dpad.classList.contains('hidden') && screen !== 'dpad-layout' && dpadTop > window.innerHeight * 0.55;
+  const bottom = below ? window.innerHeight - dpadTop + 8 : 0;
+  if (mode.kind !== 'tutorial') {
+    renderer.setInsets(0, bottom);
+    return;
+  }
   const card = $('#tutorial-card');
   if (card.classList.contains('hidden')) return; // на паузе поле остаётся на месте
-  const dpad = $('#dpad');
-  const top = card.getBoundingClientRect().bottom + 8;
-  // Крест внизу — поле рисуется над ним; крест сбоку или выше середины (своё расположение) — не мешает.
-  const dpadTop = dpad.getBoundingClientRect().top;
-  const below = !dpad.classList.contains('hidden') && dpadTop > window.innerHeight * 0.55;
-  const bottom = below ? window.innerHeight - dpadTop + 8 : 0;
-  renderer.setInsets(top, bottom);
+  renderer.setInsets(card.getBoundingClientRect().bottom + 8, bottom);
 }
 
 /**
@@ -597,8 +600,15 @@ function updateProfileButton() {
 }
 const tutorialUI = createTutorialUI({
   onNext: () => { if (mode.kind === 'tutorial') mode.next(); },
-  onSkip: () => toMenu(),
-  onLayout: fitSceneToTutorial,
+  onSkip: () => {
+    // «Пропустить обучение» — осознанный отказ: плашка «Вы ещё не прошли обучение» в меню больше не нужна
+    // (обучение остаётся в «Как играть» и в настройках).
+    tutorial.bannerOff = true;
+    saveTutorial(tutorial);
+    tutorialUI.setBanner(false);
+    toMenu();
+  },
+  onLayout: fitSceneToControls,
 });
 const firstHints = createFirstHints({ seen: tutorial.hints, save: () => saveTutorial(tutorial) });
 
@@ -697,7 +707,7 @@ function updateDpad() {
     || screen === 'dpad-layout';
   $('#dpad').classList.toggle('hidden', !visible);
   if (!visible) dpadControl.release();
-  fitSceneToTutorial();
+  fitSceneToControls();
 }
 const dpadControl = setupDpad($('#dpad'), (dir) => {
   audio.unlock();
@@ -802,6 +812,11 @@ const ACTIONS = {
     else show(installFrom);
   },
   'welcome-later': () => {}, // карточка уже закрыта общим обработчиком; плашка в меню остаётся
+  'banner-close': () => {
+    tutorial.bannerOff = true;
+    saveTutorial(tutorial);
+    tutorialUI.setBanner(false);
+  },
   'dpad-layout': () => {
     show('dpad-layout');
     updateDpad();
@@ -865,6 +880,7 @@ exposeForTests({
   get state() { return app.state; },
   get game() { return mode.game; },
   get headScreen() { return renderer.headScreen; }, // точка головы на экране — для проверки таймера статусов
+  get insets() { return { ...renderer.insets }; }, // сдвиги поля под карточку и кнопки — для проверки
   get turn() { return renderer.turn; },
   get theme() { return document.documentElement.dataset.theme; },
   get fieldInsets() { return renderer.insets; },
@@ -883,7 +899,7 @@ renderCredits(MUSIC_TRACKS, MUSIC_LICENSE);
 setupScene();
 show('menu');
 
-tutorialUI.setBanner(!tutorial.done);
+tutorialUI.setBanner(!tutorial.done && !tutorial.bannerOff);
 
 // Пришли по ссылке друга: сразу подключаемся к его комнате (обучение не навязываем).
 const invited = new URLSearchParams(window.location.search).get('room');

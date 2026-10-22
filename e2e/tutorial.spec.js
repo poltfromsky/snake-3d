@@ -133,6 +133,25 @@ test('пройти обучение можно из меню и пропусти
   await page.locator('#btn-tutorial-skip').click();
   await expect(page.locator('#screen-menu')).toBeVisible();
   await expect(page.locator('#tutorial-card')).toBeHidden();
+  // Осознанно пропустил — плашка «Вы ещё не прошли обучение» больше не висит (и после перезагрузки).
+  await expect(page.locator('#tutorial-banner')).toBeHidden();
+  await page.reload();
+  await waitForGame(page);
+  await expect(page.locator('#tutorial-banner')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('плашку «Вы ещё не прошли обучение» можно закрыть крестиком — и она не возвращается', async ({ page }) => {
+  const errors = await openGame(page, { tutorial: false });
+  await expect(page.locator('#tutorial-banner')).toBeVisible();
+  await page.locator('#tutorial-banner [data-action="banner-close"]').click();
+  await expect(page.locator('#tutorial-banner')).toBeHidden();
+  await page.reload();
+  await waitForGame(page);
+  await expect(page.locator('#tutorial-banner')).toBeHidden();
+  // Обучение при этом по-прежнему предлагается перед «Играть» (первые три раза).
+  await page.locator('#screen-menu [data-action="play"]').click();
+  await expect(page.locator('#screen-tutorial-offer')).toBeVisible();
   expect(errors).toEqual([]);
 });
 

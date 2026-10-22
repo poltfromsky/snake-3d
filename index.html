@@ -78,10 +78,13 @@
   <!-- Главное меню -->
   <section id="screen-menu" class="screen">
     <div class="panel">
-      <!-- Обучение ещё не пройдено: плашка висит, пока его не пройдут. -->
+      <!-- Обучение ещё не пройдено: плашка висит, пока его не пройдут или не закроют (× / «Пропустить обучение»). -->
       <div id="tutorial-banner" class="update-banner hidden" role="status">
         <span><span class="ic" data-icon="cap"></span>Вы ещё не прошли обучение — это 1 минута</span>
-        <button class="btn primary" data-action="tutorial">Пройти</button>
+        <span class="update-actions">
+          <button class="btn primary" data-action="tutorial">Пройти</button>
+          <button class="btn banner-close" data-action="banner-close" aria-label="Больше не показывать">×</button>
+        </span>
       </div>
       <!-- Новая версия скачана в фоне: включается по кнопке, только из меню. -->
       <div id="update-banner" class="update-banner hidden" role="status">

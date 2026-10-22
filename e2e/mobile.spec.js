@@ -233,6 +233,34 @@ test.describe('телефон', () => {
     expect(errors).toEqual([]);
   });
 
+  test('«Кнопки на экране»: поле сдвигается вверх над крестом и не прячется под пальцами; свой крест сбоку — не сдвигает', async ({ page }) => {
+    const errors = await openGame(page, { mode: 'classic', controls: 'buttons' });
+    const insets = () => page.evaluate(() => globalThis.__snakeE2E.insets);
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await expect(page.locator('#dpad')).toBeVisible();
+    const dpadTop = await page.locator('#dpad').evaluate((el) => el.getBoundingClientRect().top);
+    const viewport = page.viewportSize();
+    const lifted = await insets();
+    expect(lifted.bottom, 'поле поднято над крестом').toBeGreaterThan(viewport.height - dpadTop - 2);
+    expect(lifted.top).toBe(0);
+    // Пауза → меню: поле на месте.
+    await page.locator('#btn-pause').click();
+    await page.locator('#screen-pause [data-action="menu"]').click();
+    expect((await insets()).bottom).toBe(0);
+    // Свои кнопки выше середины экрана — поле не сдвигаем.
+    await page.evaluate(() => {
+      const s = JSON.parse(globalThis.localStorage.getItem('snake3d.settings.v1'));
+      s.dpad = { x: 0.8, y: 0.3, scale: 1 };
+      globalThis.localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
+    });
+    await page.reload();
+    await page.locator('#screen-menu [data-action="play"]').click();
+    await expect(page.locator('#dpad')).toBeVisible();
+    expect((await insets()).bottom, 'крест выше середины — поле на месте').toBe(0);
+    // Свайпы: поле на месте.
+    expect(errors).toEqual([]);
+  });
+
   test('повернули телефон в меню — поле разворачивается вместе с экраном', async ({ page }) => {
     const errors = await openGame(page);
     const field = () => page.evaluate(() => globalThis.__snakeE2E.game.opts).then((o) => [o.width, o.height]);

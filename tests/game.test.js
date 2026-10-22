@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DIRECTIONS, EFFECT_WARN_MS, effectBlinkOn, Game, ITEM, MAX_QUEUED_TURNS, MODES, SLOW_EASE_IN_MS, SLOW_FACTOR,
+  aheadCells, CLEAR_AHEAD, DIRECTIONS, EFFECT_WARN_MS, effectBlinkOn, Game, ITEM, MAX_QUEUED_TURNS, MODES, SLOW_EASE_IN_MS,
+  SLOW_FACTOR, SLOW_MIN_SCORE,
 } from '../src/core/game.js';
 
 /** Предсказуемый генератор: всегда возвращает одно и то же число. */
@@ -242,4 +243,105 @@ test('предмет не появляется на змейке и камнях
   game.obstacles = [{ x: 2, y: 0 }];
   game.items = [];
   assert.deepEqual(game.freeCell(), { x: 3, y: 0 });
+});
+
+/** Игра с настоящим генератором случайных чисел — для проверки «на тысячах генераций». */
+const randomGame = (options, seed) => {
+  let a = seed >>> 0;
+  const rng = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const game = new Game({ width: 24, height: 16, ...options }, rng);
+  game.items = [];
+  return game;
+};
+
+test('путь змейки: клетки прямо по курсу, с переходом через край только там, где стен нет', () => {
+  const field = { width: 10, height: 6 };
+  const walls = aheadCells({ x: 7, y: 2 }, [DIRECTIONS.RIGHT], { ...field, wrap: false }, 8);
+  assert.deepEqual([...walls].sort(), ['8,2', '9,2'], 'у стены путь кончается стеной');
+  const wrap = aheadCells({ x: 7, y: 2 }, [DIRECTIONS.RIGHT], { ...field, wrap: true }, 8);
+  assert.equal(wrap.size, 8);
+  assert.ok(wrap.has('0,2') && wrap.has('5,2'), 'сквозь стену путь продолжается с другого края');
+  assert.equal(CLEAR_AHEAD, 8);
+});
+
+for (const mode of [MODES.CLASSIC, MODES.WALLS, MODES.TIMED]) {
+  test(`камни и гниль никогда не появляются в ${CLEAR_AHEAD} клетках прямо по курсу (режим ${mode}), 2000 генераций`, () => {
+    for (let seed = 1; seed <= 2000; seed += 1) {
+      const game = randomGame({ mode }, seed);
+      // Случайная позиция и курс; змейка не в углу, чтобы был простор.
+      const dirs = Object.values(DIRECTIONS);
+      game.direction = dirs[seed % 4];
+      const x = 4 + (seed * 7) % 16;
+      const y = 3 + (seed * 5) % 10;
+      game.snake = [{ x, y }, { x: x - game.direction.x, y: y - game.direction.y }, { x: x - 2 * game.direction.x, y: y - 2 * game.direction.y }]
+        .map((c) => ({ x: (c.x + 24) % 24, y: (c.y + 16) % 16 }));
+      game.turnQueue = seed % 3 === 0 ? [dirs[(seed + 1) % 4]].filter((d) => d.x !== -game.direction.x || d.y !== -game.direction.y) : [];
+      game.obstacles = [];
+      const way = aheadCells(game.head, [game.direction, game.turnQueue.at(-1)].filter(Boolean),
+        { width: 24, height: 16, wrap: mode !== MODES.WALLS });
+      game.spawnItem(ITEM.BAD, 5000);
+      for (let i = 0; i < 2; i += 1) {
+        const cell = game.freeCell({ awayFromHead: 4, clearAhead: CLEAR_AHEAD });
+        if (cell) game.obstacles.push(cell);
+      }
+      const dangerous = [...game.obstacles, ...game.items.filter((it) => it.kind === ITEM.BAD)];
+      for (const c of dangerous) assert.ok(!way.has(`${c.x},${c.y}`), `seed ${seed}: ${c.x},${c.y} на пути`);
+      for (const c of game.obstacles) {
+        assert.ok(Math.abs(c.x - game.head.x) + Math.abs(c.y - game.head.y) >= 4, 'и по-прежнему не ближе 4 клеток');
+      }
+    }
+  });
+}
+
+test('яблоко и бонусы на путь змейки попасть могут (хорошее перед носом — не беда)', () => {
+  let ahead = 0;
+  for (let seed = 1; seed <= 400; seed += 1) {
+    const game = randomGame({ mode: MODES.CLASSIC }, seed);
+    const apple = game.spawnItem(ITEM.APPLE);
+    const way = aheadCells(game.head, [game.direction], { width: 24, height: 16, wrap: true });
+    if (way.has(`${apple.x},${apple.y}`)) ahead += 1;
+  }
+  assert.ok(ahead > 0, 'яблоко иногда прямо по курсу');
+});
+
+test('«Замедление» не выпадает до 120 очков, после — выпадает', () => {
+  const kinds = (score) => {
+    const seen = new Set();
+    for (let seed = 1; seed <= 3000; seed += 1) {
+      const game = randomGame({}, seed);
+      game.score = score;
+      game.maybeSpawnExtras();
+      for (const it of game.items) if (it.kind === ITEM.SLOW || it.kind === ITEM.GHOST) seen.add(it.kind);
+    }
+    return seen;
+  };
+  assert.deepEqual([...kinds(SLOW_MIN_SCORE - 10)], [ITEM.GHOST], 'до порога — только «Призрак»');
+  assert.ok(kinds(SLOW_MIN_SCORE).has(ITEM.SLOW), 'с порога — и «Замедление»');
+  assert.equal(SLOW_MIN_SCORE, 120);
+});
+
+test('дуэль: камни и гниль не появляются на пути ни одной из двух змеек', async () => {
+  const { Duel } = await import('../src/core/duel.js');
+  for (const mode of [MODES.CLASSIC, MODES.WALLS]) {
+    for (let seed = 1; seed <= 800; seed += 1) {
+      const duel = new Duel({ mode, width: 26, height: 16 }, randomGame({}, seed).rng);
+      duel.items = [];
+      duel.obstacles = [];
+      const ways = duel.players.flatMap((p) => [...aheadCells(p.body[0], [p.direction], { width: 26, height: 16, wrap: mode !== MODES.WALLS })]);
+      duel.spawnItem(ITEM.BAD, 5000);
+      for (let i = 0; i < 2; i += 1) {
+        const cell = duel.freeCell(4, CLEAR_AHEAD);
+        if (cell) duel.obstacles.push(cell);
+      }
+      for (const c of [...duel.obstacles, ...duel.items.filter((it) => it.kind === ITEM.BAD)]) {
+        assert.ok(!ways.includes(`${c.x},${c.y}`), `${mode} seed ${seed}`);
+      }
+    }
+  }
 });

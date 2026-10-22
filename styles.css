@@ -990,6 +990,7 @@ kbd {
 }
 
 .update-banner .btn { padding: 8px 14px; font-size: 14px; }
+.update-banner .banner-close { padding: 8px 12px; font-size: 18px; line-height: 1; background: transparent; color: var(--muted); }
 .update-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* Первый заход: карточка с предложением обучения и подсветка главных кнопок меню. */

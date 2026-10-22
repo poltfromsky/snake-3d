@@ -43,6 +43,39 @@ export const DEFAULTS = Object.freeze({
 const SCORE = { [ITEM.APPLE]: 10, [ITEM.BAD]: -5, [ITEM.SLOW]: 5, [ITEM.GHOST]: 5 };
 
 /**
+ * Камни и гниль не появляются на ближайшем пути змейки: столько клеток прямо по курсу (и по уже
+ * заказанным поворотам) остаются свободными. 8 клеток — это больше секунды хода даже на высокой
+ * скорости (до 18 клеток/с у быстрой змейки на большом уровне): успеть повернуть можно всегда.
+ * Раньше камень мог встать в 3–4 клетках впереди сразу после яблока, и увернуться было нельзя.
+ */
+export const CLEAR_AHEAD = 8;
+
+/** «Замедление» появляется только от этого счёта: в начале игры змейка и так медленная. */
+export const SLOW_MIN_SCORE = 120;
+
+/**
+ * Клетки на пути змейки: от головы прямо по каждому из направлений dirs, не дальше n клеток.
+ * @returns {Set<string>} ключи «x,y»
+ */
+export function aheadCells(head, dirs, { width, height, wrap }, n = CLEAR_AHEAD) {
+  const out = new Set();
+  for (const d of dirs) {
+    for (let k = 1; k <= n; k += 1) {
+      let x = head.x + d.x * k;
+      let y = head.y + d.y * k;
+      if (wrap) {
+        x = ((x % width) + width) % width;
+        y = ((y % height) + height) % height;
+      } else if (x < 0 || y < 0 || x >= width || y >= height) {
+        break;
+      }
+      out.add(`${x},${y}`);
+    }
+  }
+  return out;
+}
+
+/**
  * «Замедление»: скорость ×0.6. Вход и выход — плавные: раньше в конце скорость мгновенно
  * прыгала с 0.6 до 1, и змейка делала рывок. Теперь последнюю секунду скорость растёт
  * постепенно, а в начале за четверть секунды плавно падает.
@@ -297,7 +330,7 @@ export class Game {
       // На каждом новом уровне добавляются камни, но не больше 12.
       const stones = Math.min(2, 12 - this.obstacles.length);
       for (let i = 0; i < stones; i += 1) {
-        const cell = this.freeCell({ awayFromHead: 4 });
+        const cell = this.freeCell({ awayFromHead: 4, clearAhead: CLEAR_AHEAD });
         if (cell) this.obstacles.push(cell);
       }
       events.push({ type: 'levelUp', level });
@@ -310,12 +343,18 @@ export class Game {
       this.spawnItem(ITEM.BAD, this.opts.badFoodLifetimeMs);
     }
     if (!has(ITEM.SLOW) && !has(ITEM.GHOST) && this.rng() < 0.18) {
-      this.spawnItem(this.rng() < 0.5 ? ITEM.SLOW : ITEM.GHOST, this.opts.bonusLifetimeMs);
+      // До SLOW_MIN_SCORE очков вместо «Замедления» всегда «Призрак»: замедлять медленную игру незачем.
+      const slow = this.score >= SLOW_MIN_SCORE && this.rng() < 0.5;
+      this.spawnItem(slow ? ITEM.SLOW : ITEM.GHOST, this.opts.bonusLifetimeMs);
     }
   }
 
   spawnItem(kind, ttl = null) {
-    const cell = this.freeCell({ awayFromHead: kind === ITEM.APPLE ? 0 : 3 });
+    // Гниль, как и камни, не кладём на путь змейки; яблоко и бонусы — можно.
+    const cell = this.freeCell({
+      awayFromHead: kind === ITEM.APPLE ? 0 : 3,
+      clearAhead: kind === ITEM.BAD ? CLEAR_AHEAD : 0,
+    });
     if (!cell) return null;
     const item = { kind, x: cell.x, y: cell.y, ttl };
     this.items.push(item);
@@ -323,9 +362,14 @@ export class Game {
   }
 
   /** Случайная клетка, не занятая змейкой, камнями и предметами. */
-  freeCell({ awayFromHead = 0 } = {}) {
+  freeCell({ awayFromHead = 0, clearAhead = 0 } = {}) {
     const { width, height } = this.opts;
     const busy = new Set([...this.snake, ...this.obstacles, ...this.items].map(cellKey));
+    if (clearAhead > 0) {
+      // Путь: прямо по текущему курсу и по последнему заказанному повороту.
+      const dirs = [this.direction, this.turnQueue.at(-1)].filter(Boolean);
+      for (const key of aheadCells(this.head, dirs, { width, height, wrap: this.opts.mode !== MODES.WALLS }, clearAhead)) busy.add(key);
+    }
     const free = [];
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {

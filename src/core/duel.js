@@ -5,7 +5,7 @@
  * только хозяин комнаты, а гость получает готовые снимки состояния.
  */
 import {
-  DEFAULTS, DIRECTIONS, ITEM, MAX_QUEUED_TURNS, MODES, sameCell,
+  aheadCells, CLEAR_AHEAD, DEFAULTS, DIRECTIONS, ITEM, MAX_QUEUED_TURNS, MODES, sameCell,
 } from './game.js';
 
 const SCORE = { [ITEM.APPLE]: 10, [ITEM.BAD]: -5 };
@@ -198,7 +198,7 @@ export class Duel {
       if (level > this.level) {
         this.level = level;
         for (let i = 0; i < 2 && this.obstacles.length < 12; i += 1) {
-          const cell = this.freeCell(4);
+          const cell = this.freeCell(4, CLEAR_AHEAD);
           if (cell) this.obstacles.push(cell);
         }
         events.push({ type: 'levelUp', level });
@@ -213,16 +213,24 @@ export class Duel {
   }
 
   spawnItem(kind, ttl = null) {
-    const cell = this.freeCell(kind === ITEM.APPLE ? 0 : 3);
+    // Гниль не кладём на путь змеек (как камни); яблоко — можно.
+    const cell = this.freeCell(kind === ITEM.APPLE ? 0 : 3, kind === ITEM.BAD ? CLEAR_AHEAD : 0);
     if (cell) this.items.push({ kind, x: cell.x, y: cell.y, ttl });
   }
 
-  freeCell(awayFromHeads = 0) {
+  freeCell(awayFromHeads = 0, clearAhead = 0) {
     const { width, height } = this.opts;
     const busy = new Set(
       [...this.players.flatMap((p) => p.body), ...this.obstacles, ...this.items]
         .map((c) => `${c.x},${c.y}`),
     );
+    if (clearAhead > 0) {
+      const wrap = this.opts.mode !== MODES.WALLS;
+      for (const p of this.players) {
+        const dirs = [p.direction, p.turnQueue.at(-1)].filter(Boolean);
+        for (const key of aheadCells(p.body[0], dirs, { width, height, wrap }, clearAhead)) busy.add(key);
+      }
+    }
     const heads = this.players.map((p) => p.body[0]);
     const free = [];
     for (let y = 0; y < height; y += 1) {

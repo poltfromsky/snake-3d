@@ -73,6 +73,17 @@ test('поворот нужен только когда поле вытянут�
   assert.equal(quarterTurn(390 / 844, { width: 20, height: 20 }), 0, 'квадратное поле не поворачиваем');
 });
 
+test('поле поднято над кнопками (область почти квадратная), а экран вертикальный — поле не поворачивается', () => {
+  const field = { width: 14, height: 20 }; // вертикальное поле на телефоне
+  const screenAspect = 390 / 664;
+  const areaAspect = 390 / 383; // над крестом из кнопок осталась почти квадратная область
+  assert.equal(cameraLayout({ aspect: areaAspect, screenAspect, field }).turn, 0, 'ориентацию решает экран');
+  // Без screenAspect было бы наоборот — так и вращалось поле при включении кнопок.
+  assert.equal(cameraLayout({ aspect: areaAspect, field }).turn, 1);
+  // Горизонтальный экран остаётся горизонтальным, даже если область под поле стала узкой.
+  assert.equal(cameraLayout({ aspect: 0.5, screenAspect: 2, field: { width: 26, height: 16 } }).turn, 0);
+});
+
 test('своя змейка внизу экрана: у второго игрока поле повёрнуто в другую сторону', () => {
   const field = { width: 26, height: 16 };
   // Игрок 1 стартует слева (x меньше) — камера отступает влево, то есть он внизу экрана.
