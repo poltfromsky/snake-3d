@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  gameState, openGame, releaseFinger, swipe,
+  gameState, openGame, releaseFinger, swipe, waitForGame,
 } from './helpers.js';
 
 test('на компьютере подсказки для пальцев и кнопки-стрелки спрятаны', async ({ page, isMobile }) => {
@@ -242,7 +242,8 @@ test.describe('телефон', () => {
     const viewport = page.viewportSize();
     const lifted = await insets();
     expect(lifted.bottom, 'поле поднято над крестом').toBeGreaterThan(viewport.height - dpadTop - 2);
-    expect(lifted.top).toBe(0);
+    const hudBottom = await page.locator('#hud').evaluate((el) => el.getBoundingClientRect().bottom);
+    expect(lifted.top, 'поле ниже панели со счётом').toBeGreaterThanOrEqual(Math.floor(hudBottom));
     // Пауза → меню: поле на месте.
     await page.locator('#btn-pause').click();
     await page.locator('#screen-pause [data-action="menu"]').click();
@@ -254,6 +255,7 @@ test.describe('телефон', () => {
       globalThis.localStorage.setItem('snake3d.settings.v1', JSON.stringify(s));
     });
     await page.reload();
+    await waitForGame(page); // меню есть в самом HTML — нажатие до загрузки игры терялось
     await page.locator('#screen-menu [data-action="play"]').click();
     await expect(page.locator('#dpad')).toBeVisible();
     expect((await insets()).bottom, 'крест выше середины — поле на месте').toBe(0);

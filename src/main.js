@@ -155,18 +155,23 @@ function setMode(next) {
 }
 
 /**
- * Поле не должно прятаться под пальцами и карточкой: оно рисуется в области между ними.
+ * Поле не должно прятаться под пальцами, счётчиками и карточкой: оно рисуется в области между ними.
  *   - обучение: карточка с заданием сверху и кнопки-стрелки снизу;
- *   - обычная игра с «Кнопками на экране»: сдвиг вверх, над крестом (раньше крест закрывал нижнюю часть поля).
- * Крест сбоку или выше середины экрана (своё расположение) поле не сдвигает.
+ *   - обычная игра: от низа панели со счётом до верхней кнопки креста (крест любого размера —
+ *     сколько места осталось, в то и вписывается поле).
+ * Крест в верхней половине экрана (своё расположение) поле снизу не поджимает.
  */
 function fitSceneToControls() {
   const dpad = $('#dpad');
-  const dpadTop = dpad.getBoundingClientRect().top;
-  const below = !dpad.classList.contains('hidden') && screen !== 'dpad-layout' && dpadTop > window.innerHeight * 0.55;
-  const bottom = below ? window.innerHeight - dpadTop + 8 : 0;
+  const rect = dpad.getBoundingClientRect();
+  // Крест внизу, если его середина ниже середины экрана: большой крест поднимается выше, но поле всё равно над ним.
+  const below = !dpad.classList.contains('hidden') && screen !== 'dpad-layout'
+    && (rect.top + rect.bottom) / 2 > window.innerHeight / 2;
+  const bottom = below ? window.innerHeight - rect.top + 8 : 0;
   if (mode.kind !== 'tutorial') {
-    renderer.setInsets(0, bottom);
+    const hud = $('#hud');
+    const hudBottom = hud.classList.contains('hidden') ? 0 : hud.getBoundingClientRect().bottom + 6;
+    renderer.setInsets(hudBottom, bottom);
     return;
   }
   const card = $('#tutorial-card');
@@ -191,6 +196,7 @@ function setupScene() {
 function show(name) {
   screen = name;
   showScreen(name, mode);
+  fitSceneToControls(); // панель со счётом показалась или спряталась — область под поле меняется
   if (name !== 'menu') welcome.dismiss(); // карточка первого захода живёт только поверх меню
 }
 
@@ -624,7 +630,7 @@ const settingsScreen = createSettingsScreen({
     },
     // Тема меняется только в меню, чтобы не сбрасывать текущую партию.
     onTheme: () => { if (app.is(MENU)) setupScene(); },
-    onCamera: (value) => { renderer.cameraMode = value; },
+    onCamera: (value) => { renderer.cameraMode = value; fitSceneToControls(); },
     onControls: () => updateDpad(),
   },
 });
@@ -884,6 +890,7 @@ exposeForTests({
   get turn() { return renderer.turn; },
   get theme() { return document.documentElement.dataset.theme; },
   get fieldInsets() { return renderer.insets; },
+  get fieldRect() { return renderer.fieldScreenRect(); }, // где поле на экране — не под счётом и не под кнопками
   get cameraPosition() { return renderer.camera.position.toArray(); },
   get tutorialStep() { return mode.kind === 'tutorial' ? mode.index : null; },
   // Как будто в фоне скачалась новая версия (сам service worker в тестах не подменить).
@@ -897,6 +904,13 @@ for (const el of document.querySelectorAll('.online-only')) {
 }
 renderCredits(MUSIC_TRACKS, MUSIC_LICENSE);
 setupScene();
+// Панель со счётом и крест меняют размер сами по себе (таймер «На время» переносит панель на вторую
+// строку на узком экране, свой размер креста) — поле каждый раз заново встаёт между ними.
+if ('ResizeObserver' in globalThis) {
+  const observer = new ResizeObserver(() => fitSceneToControls());
+  observer.observe($('#hud'));
+  observer.observe($('#dpad'));
+}
 show('menu');
 
 tutorialUI.setBanner(!tutorial.done && !tutorial.bannerOff);

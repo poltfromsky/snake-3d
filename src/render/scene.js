@@ -272,6 +272,32 @@ export class SceneRenderer {
     };
   }
 
+  /**
+   * Прямоугольник, который поле с бортиком занимает на экране (CSS-пиксели окна), — для автотестов:
+   * поле не должно заходить под счётчики и кнопки-стрелки.
+   */
+  fieldScreenRect() {
+    if (!this.size) return null;
+    this.camera.updateMatrixWorld();
+    const hx = this.size.width / 2 + 0.3;
+    const hz = this.size.height / 2 + 0.3;
+    const rect = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+    for (const y of [0, 0.6]) {
+      for (const x of [-hx, hx]) {
+        for (const z of [-hz, hz]) {
+          tmpVec.set(x, y, z).project(this.camera);
+          const sx = ((tmpVec.x + 1) / 2) * window.innerWidth;
+          const sy = ((1 - tmpVec.y) / 2) * window.innerHeight;
+          rect.left = Math.min(rect.left, sx);
+          rect.right = Math.max(rect.right, sx);
+          rect.top = Math.min(rect.top, sy);
+          rect.bottom = Math.max(rect.bottom, sy);
+        }
+      }
+    }
+    return rect;
+  }
+
   syncItems(view, time) {
     // Ключ по виду и клетке: у гостя предметы каждый кадр приходят новыми объектами.
     const keyOf = (item) => `${item.kind}:${item.x},${item.y}`;
@@ -526,9 +552,10 @@ export class SceneRenderer {
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    // Область под поле не меньше трети экрана: на совсем низком окне поле важнее карточки.
+    // Область под поле не меньше четверти экрана: на совсем низком окне поле важнее карточки.
+    // (С третью на маленьком телефоне и крупном поднятом кресте поле залезало под верхнюю кнопку.)
     const { top, bottom } = this.insets;
-    const areaH = Math.max(h - top - bottom, Math.round(h / 3));
+    const areaH = Math.max(h - top - bottom, Math.round(h / 4));
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
     this.camera.aspect = w / areaH;

@@ -16,6 +16,14 @@ const DPAD_SIZE_PX = 64 * 3 + 6 * 2;
 export const DPAD_SCALE_MIN = 0.75;
 export const DPAD_SCALE_MAX = 1.4;
 const EDGE_PX = 8;
+/** На вертикальном экране крест не выше этой доли его высоты: иначе на маленьком телефоне полю не остаётся места. */
+const DPAD_MAX_SHARE = 0.4;
+
+/** Наибольший масштаб креста для экрана: на маленьком вертикальном — меньше DPAD_SCALE_MAX. */
+export function dpadScaleMax(width, height) {
+  if (height <= width) return DPAD_SCALE_MAX;
+  return Math.max(DPAD_SCALE_MIN, Math.min(DPAD_SCALE_MAX, (height * DPAD_MAX_SHARE) / DPAD_SIZE_PX));
+}
 
 /**
  * Где на экране поставить крест (центр в пикселях и масштаб) по сохранённой раскладке
@@ -24,7 +32,7 @@ const EDGE_PX = 8;
  */
 export function dpadPlacement(layout, width, height, { top = 0 } = {}) {
   if (!layout || ![layout.x, layout.y, layout.scale].every(Number.isFinite)) return null;
-  const scale = Math.min(DPAD_SCALE_MAX, Math.max(DPAD_SCALE_MIN, layout.scale));
+  const scale = Math.min(dpadScaleMax(width, height), Math.max(DPAD_SCALE_MIN, layout.scale));
   const half = (DPAD_SIZE_PX * scale) / 2 + EDGE_PX;
   const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
   return {

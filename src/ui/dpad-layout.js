@@ -5,7 +5,9 @@
  * слева, по центру или справа и поменять размер. Положение хранится в настройках в долях
  * экрана ({x, y, scale}), поэтому переживает поворот телефона; null — как раньше, внизу по центру.
  */
-import { applyDpadLayout, DPAD_SCALE_MAX, DPAD_SCALE_MIN, dpadPlacement } from './dpad.js';
+import {
+  applyDpadLayout, DPAD_SCALE_MIN, dpadPlacement, dpadScaleMax,
+} from './dpad.js';
 import { $, markActive } from './dom.js';
 
 /** Быстрые варианты: центр креста по ширине экрана, у нижнего края. */
@@ -88,7 +90,8 @@ export function createDpadEditor({ root, settings, save }) {
       editing = true;
       root.classList.add('editing');
       $('#dpad-scale').min = String(DPAD_SCALE_MIN);
-      $('#dpad-scale').max = String(DPAD_SCALE_MAX);
+      // На маленьком экране ползунок кончается раньше: крест не выше 40% экрана.
+      $('#dpad-scale').max = String(dpadScaleMax(window.innerWidth, window.innerHeight));
       if (settings.dpad) apply(settings.dpad);
       else syncControls();
     },

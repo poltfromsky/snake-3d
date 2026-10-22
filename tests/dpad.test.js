@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DPAD_SCALE_MAX, DPAD_SCALE_MIN, dpadDirection, dpadPlacement,
+  DPAD_SCALE_MAX, DPAD_SCALE_MIN, dpadDirection, dpadPlacement, dpadScaleMax,
 } from '../src/ui/dpad.js';
 
 // Крест 204×204 с центром в (200, 400).
@@ -44,4 +44,14 @@ test('битая или пустая раскладка — место по ум
   assert.equal(dpadPlacement(null, 400, 800), null);
   assert.equal(dpadPlacement({ x: 'a', y: 0.5, scale: 1 }, 400, 800), null);
   assert.equal(dpadPlacement({ x: 0.5, y: Number.NaN, scale: 1 }, 400, 800), null);
+});
+
+test('на маленьком вертикальном экране крест не выше 40% экрана; на обычном и лёжа — как раньше', () => {
+  const size = 64 * 3 + 6 * 2;
+  assert.equal(dpadScaleMax(412, 915), DPAD_SCALE_MAX, 'обычный телефон — без ограничения');
+  assert.ok(dpadScaleMax(320, 568) * size <= 568 * 0.4 + 1e-9, 'маленький телефон');
+  assert.ok(dpadScaleMax(320, 568) < DPAD_SCALE_MAX);
+  assert.ok(dpadPlacement({ x: 0.5, y: 0.7, scale: 1.4 }, 320, 568).scale * size <= 568 * 0.4 + 1e-9);
+  assert.equal(dpadScaleMax(800, 400), DPAD_SCALE_MAX, 'лёжа крест сбоку — не ограничиваем');
+  assert.ok(dpadScaleMax(200, 300) >= DPAD_SCALE_MIN, 'не меньше наименьшего размера');
 });
