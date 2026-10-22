@@ -17,6 +17,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <!-- Заставка при входе (src/ui/intro.js): пока грузится игра, закрываем меню тёмным экраном с первого кадра.
+       Условия те же, что в src/boot.js (startIntro); ключи хранилища — как в src/storage.js (проверяет tests/intro-gate.test.js). -->
+  <style>html.pre-intro::before { content: ""; position: fixed; inset: 0; z-index: 9998; background: #070b18; }</style>
+  <script>
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search);
+        var ls = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+        if (q.get('intro') === null && (q.has('e2e') || q.has('room'))) return;
+        var off = false;
+        try { off = JSON.parse(ls('snake3d.settings.v1') || '{}').intro === 'off'; } catch (e) { /* битые настройки — как по умолчанию */ }
+        if (off && q.get('intro') === null) return;
+        document.documentElement.classList.add('pre-intro');
+        // Страховка: если вступление не запустилось, тёмный экран всё равно снимется.
+        setTimeout(function () { document.documentElement.classList.remove('pre-intro'); }, 8000);
+      } catch (e) { /* без подложки игра просто стартует как раньше */ }
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
   <script type="importmap">
     {
@@ -527,6 +545,12 @@
       </div>
       <div class="field">Обучение
         <button class="btn" data-action="tutorial"><span class="ic" data-icon="cap"></span>Пройти обучение заново</button>
+      </div>
+      <div class="field">Заставка при входе
+        <div class="segmented compact" id="set-intro">
+          <button data-value="on">Показывать</button>
+          <button data-value="off">Не показывать</button>
+        </div>
       </div>
       <div class="field touch-only">Управление
         <div class="segmented compact" id="set-controls">

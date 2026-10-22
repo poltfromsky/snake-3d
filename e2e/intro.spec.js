@@ -68,10 +68,36 @@ test('вернувшийся игрок: сразу обложка, нажати
   await page.goto('/');
   await expect(page.locator('.intro-cover')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.splash')).toHaveCount(0);
-  await expect(page.locator('.intro-hint')).toContainText('чтобы войти');
+  // Вернувшемуся — только название и змейка, без подписей.
+  await expect(page.locator('.intro-title')).toBeVisible();
+  await expect(page.locator('.intro-hint, .intro-sub')).toHaveCount(0);
   await page.locator('.intro-snake').click({ force: true });
   await expect(page.locator('.intro')).toHaveCount(0);
   await expect(page.locator('.intro-card')).toHaveCount(0);
   await expect(page.locator('#screen-menu')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('вернувшийся игрок: обложка сама уходит в меню, ничего нажимать не нужно', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/?e2e');
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await page.evaluate(() => localStorage.setItem('snake3d.tutorial.v1', JSON.stringify({ shown: true })));
+  await page.goto('/');
+  await expect(page.locator('.intro-cover')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.intro')).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator('#screen-menu')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('в настройках заставку можно выключить: ни тёмного экрана, ни обложки', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/?e2e');
+  await page.waitForFunction(() => Boolean(globalThis.__snakeE2E), null, { timeout: 30_000 });
+  await page.evaluate(() => localStorage.setItem('snake3d.settings.v1', JSON.stringify({ intro: 'off' })));
+  await page.goto('/');
+  await expect(page.locator('#screen-menu')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.intro')).toHaveCount(0);
+  expect(await page.evaluate(() => globalThis.document.documentElement.classList.contains('pre-intro'))).toBe(false);
   expect(errors).toEqual([]);
 });

@@ -32,14 +32,25 @@ async function startIntro() {
   const params = new URLSearchParams(globalThis.location.search);
   const forced = params.get('intro');
   if (forced === null && (params.has('e2e') || params.has('room'))) return;
-  const { isNewPlayer } = await import('./storage.js');
+  const { isNewPlayer, loadSettings } = await import('./storage.js');
+  // В настройках заставку можно выключить (подложка из index.html при этом не включалась).
+  if (forced === null && loadSettings().intro === 'off') return;
   const returning = forced === null ? !isNewPlayer() : forced === 'back';
   const { playIntro } = await import('./ui/intro.js');
   globalThis.__snakeIntro = playIntro({ fast: forced === 'fast', returning });
 }
 
+// Тёмная подложка из index.html больше не нужна: вступление уже закрывает экран своими слоями.
+function dropPreIntro() {
+  document.documentElement.classList.remove('pre-intro');
+}
+
 if (webglAvailable()) {
-  await startIntro();
+  try {
+    await startIntro();
+  } finally {
+    dropPreIntro();
+  }
   await import('./main.js');
 } else {
   for (const screen of document.querySelectorAll('.screen')) screen.classList.add('hidden');

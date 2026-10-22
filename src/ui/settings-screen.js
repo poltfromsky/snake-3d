@@ -24,6 +24,7 @@ export function createSettingsScreen({
     markActive($('#set-controls'), 'value', settings.controls);
     syncDpadButton();
     markActive($('#set-autosubmit'), 'value', settings.autoSubmit);
+    markActive($('#set-intro'), 'value', settings.intro);
     $('#settings-profile-state').textContent = profileSummary();
   }
 
@@ -51,6 +52,7 @@ export function createSettingsScreen({
     hooks.onControls(v);
   });
   bindSegmented('#set-autosubmit', 'autoSubmit', () => {});
+  bindSegmented('#set-intro', 'intro', () => {});
 
   for (const [id, key] of [['#set-music', 'musicVolume'], ['#set-sfx', 'sfxVolume']]) {
     $(id).addEventListener('input', (e) => {

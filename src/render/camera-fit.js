@@ -19,6 +19,10 @@ const BACK = Object.freeze({
 // Наклонная камера: высота и отступ назад относительно расстояния (~55°).
 const ANGLED_HEIGHT = 1.02;
 const ANGLED_BACK = 0.62;
+// Наклонная камера смотрит чуть ближе к себе, чтобы ближний край поля не обрезался (см. placeCamera в scene.js).
+export const ANGLED_LOOK_SHIFT = 1.2;
+// Запас по краям кадра: доля половины экрана, которую поле не должно переходить.
+const FIT_PAD = 0.97;
 // Туман только на дальнем фоне: поле до самого дальнего угла остаётся ярким.
 const FOG_MARGIN = 2;
 const FOG_DEPTH = 32;
@@ -43,6 +47,43 @@ export function fovFor(aspect) {
 }
 
 /**
+ * Расстояние наклонной камеры, при котором поле целиком в кадре. Считается по настоящей проекции
+ * углов поля: наклон сжимает поле по вертикали экрана, и формула «вся длина поля по высоте кадра»
+ * (она верна для камеры строго сверху) оставляла вокруг поля пустое место — поле выходило мелким.
+ * @param {number} across клеток по горизонтали экрана
+ * @param {number} along клеток по вертикали экрана
+ * @param {number} tanHalf тангенс половины вертикального угла обзора
+ * @param {number} aspect ширина области под поле / её высота
+ */
+function angledDistance(across, along, tanHalf, aspect) {
+  const s = ANGLED_HEIGHT;
+  const c = ANGLED_BACK;
+  const norm = Math.hypot(s, c);
+  // Углы борта (на 0,3 шире поля) у земли и по верху бортика.
+  const hx = across / 2 + 0.3;
+  const hz = along / 2 + 0.3;
+  const corners = [];
+  for (const y of [0, 0.6]) {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) corners.push([sx * hx, y, sz * hz]);
+  }
+  const fits = (d) => corners.every(([x, y, z]) => {
+    const dy = y - s * d;
+    const dz = z - (c * d + ANGLED_LOOK_SHIFT);
+    const depth = (-s * dy - c * dz) / norm;
+    if (depth <= 0) return false;
+    const up = (c * dy - s * dz) / norm;
+    return Math.abs(x) / (depth * tanHalf * aspect) <= FIT_PAD && Math.abs(up) / (depth * tanHalf) <= FIT_PAD;
+  });
+  let lo = 1;
+  let hi = 400;
+  for (let i = 0; i < 40; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) hi = mid; else lo = mid;
+  }
+  return hi;
+}
+
+/**
  * Раскладка камеры для поля и экрана.
  * @returns {{turn: 0|1|-1, fov: number, distance: number, back: {x: number, z: number},
  *   up: {x: number, z: number}, fogNear: number, fogFar: number}}
@@ -61,7 +102,8 @@ export function cameraLayout({
   const tanHalf = Math.tan((fov / 2) * (Math.PI / 180));
   const fitVertical = (along + 2) / 2 / tanHalf;
   const fitHorizontal = (across + 2) / 2 / tanHalf / aspect;
-  const distance = Math.max(fitVertical, fitHorizontal);
+  const flat = Math.max(fitVertical, fitHorizontal);
+  const distance = mode === 'top' ? flat : Math.min(flat, angledDistance(across, along, tanHalf, aspect));
 
   const back = BACK[turn];
   const up = { x: -back.x, z: -back.z };

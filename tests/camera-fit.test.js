@@ -44,12 +44,41 @@ for (const [screenName, [w, h]] of Object.entries(SCREENS)) {
         const fogged = (far - L.fogNear) / (L.fogFar - L.fogNear);
         assert.ok(fogged < 0.34, `дальний угол затуманен на ${(fogged * 100).toFixed(0)}%`);
 
-        // Поле с отступом в клетку помещается в кадр по обеим осям (для камеры сверху — строго).
         const across = L.turn ? field.height : field.width;
         const along = L.turn ? field.width : field.height;
-        const visibleV = 2 * L.distance * tan(L.fov);
-        const visibleH = visibleV * aspect;
-        assert.ok(along + 2 <= visibleV + 1e-9 && across + 2 <= visibleH + 1e-9, 'поле не влезает');
+        if (mode === 'top') {
+          // Камера строго сверху: поле с отступом в клетку помещается в кадр по обеим осям.
+          const visibleV = 2 * L.distance * tan(L.fov);
+          const visibleH = visibleV * aspect;
+          assert.ok(along + 2 <= visibleV + 1e-9 && across + 2 <= visibleH + 1e-9, 'поле не влезает');
+          return;
+        }
+        // Наклонная камера: настоящая проекция углов поля (у земли и по верху бортика) попадает в кадр.
+        const forward = { x: -L.back.x * L.angledBack, y: -L.angledHeight, z: -L.back.z * L.angledBack };
+        const flen = Math.hypot(forward.x, forward.y, forward.z);
+        forward.x /= flen; forward.y /= flen; forward.z /= flen;
+        const lateral = { x: -L.back.z, z: L.back.x }; // вправо по экрану
+        const upv = { // вверх по экрану: перпендикулярно взгляду, в плоскости взгляда и «назад»
+          x: -L.back.x * L.angledHeight, y: L.angledBack, z: -L.back.z * L.angledHeight,
+        };
+        const ulen = Math.hypot(upv.x, upv.y, upv.z);
+        const tanHalf = Math.tan((L.fov / 2) * (Math.PI / 180));
+        for (const y of [0, 0.6]) {
+          for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+            const p = { x: sx * hw, y, z: sz * hh };
+            const rel = {
+              x: p.x - (cam.x + L.back.x * 1.2),
+              y: p.y - cam.y,
+              z: p.z - (cam.z + L.back.z * 1.2),
+            };
+            const depth = rel.x * forward.x + rel.y * forward.y + rel.z * forward.z;
+            const right = rel.x * lateral.x + rel.z * lateral.z;
+            const up = (rel.x * upv.x + rel.y * upv.y + rel.z * upv.z) / ulen;
+            assert.ok(depth > 0, 'угол за камерой');
+            assert.ok(Math.abs(right) / (depth * tanHalf * aspect) <= 1, `по ширине: ${(Math.abs(right) / (depth * tanHalf * aspect)).toFixed(3)}`);
+            assert.ok(Math.abs(up) / (depth * tanHalf) <= 1, `по высоте: ${(Math.abs(up) / (depth * tanHalf)).toFixed(3)}`);
+          }
+        }
       });
     }
   }

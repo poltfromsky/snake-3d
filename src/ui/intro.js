@@ -26,6 +26,7 @@ const FADE_MS = 600;
 // Музыка вступления выключена, пока её переделываем (решение Егора 22.10): без звука не нужен
 // и экран «Нажми, чтобы начать». Вернуть — MUSIC = true.
 const MUSIC = false;
+const BACK_SECONDS = 1.8; // вернувшийся игрок: сколько показывается обложка, потом сама уходит в меню
 const SILENT_SECONDS = 7; // заставка без музыки: чуть больше полного оборота змейки
 
 const CSS = `
@@ -64,8 +65,9 @@ const CSS = `
   animation: intro-flash 380ms ease-out forwards; }
 @keyframes intro-flash { from { opacity: 0.95; } to { opacity: 0; } }
 
-/* Вернувшийся игрок: обложка видна сразу (под ней грузится меню), уходит плавно. */
+/* Вернувшийся игрок: змейка и название, без подписей; видна сразу (под ней грузится меню), сама уходит плавно. */
 .intro-cover-back { cursor: pointer; }
+.intro-cover-back .intro-title { text-align: center; }
 .intro-cover { z-index: 10002; display: grid; grid-template-columns: auto auto; align-items: center; justify-content: center;
   gap: clamp(16px, 3vw, 64px); padding: 24px; box-sizing: border-box; transition: opacity ${FADE_MS}ms ease;
   background: radial-gradient(ellipse 70% 90% at 32% 50%, #1b2a55 0%, #0b1226 55%, #050812 100%); }
@@ -212,9 +214,11 @@ export function playIntro({ fast = false, returning = false } = {}) {
     const snake = el('button', 'intro-snake', `<img src="${COVER_SNAKE}" alt="">`);
     snake.type = 'button';
     snake.setAttribute('aria-label', back ? 'Войти в игру' : 'Начать');
-    const text = el('div', 'intro-text', '<h2 class="intro-title">Изгиб<br><span>Питона</span> 3D</h2>'
+    const title = '<h2 class="intro-title">Изгиб<br><span>Питона</span> 3D</h2>';
+    // Вернувшемуся — только название: подписей нет, обложка сама уходит в меню.
+    const text = el('div', 'intro-text', back ? title : title
       + '<p class="intro-sub">Классическая змейка<br>в трёх измерениях</p>'
-      + `<p class="intro-hint"><span class="intro-left">← </span><span class="intro-up">↑ </span>Нажми на змейку, чтобы ${back ? 'войти' : 'начать'}</p>`);
+      + '<p class="intro-hint"><span class="intro-left">← </span><span class="intro-up">↑ </span>Нажми на змейку, чтобы начать</p>');
     cover.append(snake, text);
     if (!back) cover.append(skip);
     document.body.append(cover);
@@ -229,8 +233,9 @@ export function playIntro({ fast = false, returning = false } = {}) {
     };
     snake.addEventListener('click', (e) => { e.stopPropagation(); choose(); });
     if (back) {
-      // Вернувшийся: войти — нажатием в любом месте обложки.
+      // Вернувшийся: обложка сама уходит через пару секунд; нажатие в любом месте — сразу в меню.
       cover.addEventListener('click', choose);
+      setTimeout(() => end('menu'), BACK_SECONDS * 1000);
     } else {
       const flash = el('div', 'intro-flash');
       document.body.append(flash);

@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   controls: 'swipe', // swipe | buttons — управление на сенсорном экране
   dpad: null, // свои положение и размер кнопок-стрелок: {x, y, scale} в долях экрана; null — внизу по центру
   autoSubmit: 'off', // on | off — сам отправлять личный рекорд в общую таблицу
+  intro: 'on', // on | off — заставка и обложка при входе (src/ui/intro.js)
   mode: 'classic',
   playerName: '', // один ник на всю игру: рекорды, отзыв, онлайн
 });

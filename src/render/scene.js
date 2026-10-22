@@ -13,7 +13,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { effectBlinkOn, ITEM, MODES } from '../core/game.js';
 import {
-  approachPoint, cameraLayout, fovFor, screenToField,
+  ANGLED_LOOK_SHIFT, approachPoint, cameraLayout, fovFor, screenToField,
 } from './camera-fit.js';
 
 export const THEMES = Object.freeze({
@@ -75,6 +75,7 @@ export class SceneRenderer {
     this.shake = 0;
     this.cameraMode = 'angled';
     this.focusIndex = 0;
+    this.snapCamera = false; // после смены раскладки камера переходит на место сразу
     this.layout = null; // раскладка камеры под поле и экран (camera-fit.js)
     this.clock = new THREE.Clock();
 
@@ -431,6 +432,7 @@ export class SceneRenderer {
   /** Пересчитывает камеру и туман под текущие поле, экран и камеру из настроек. */
   updateLayout() {
     if (!this.size) return;
+    const previous = this.layout;
     this.layout = cameraLayout({
       aspect: this.camera.aspect,
       screenAspect: window.innerWidth / window.innerHeight,
@@ -438,6 +440,9 @@ export class SceneRenderer {
       focusIndex: this.focusIndex,
       mode: this.cameraMode,
     });
+    // Поле стало другого размера в кадре (кнопки-стрелки, карточка, окно): камера встаёт на место сразу,
+    // иначе она ползёт со скоростью слежения, и поле долго остаётся мелким. Поворот поля плавный.
+    if (previous && previous.turn === this.layout.turn) this.snapCamera = true;
     // Туман зависит от того, насколько далеко камера: иначе на узком экране
     // отъехавшая камера «топила» поле в темноте.
     if (this.scene.fog) {
@@ -466,13 +471,15 @@ export class SceneRenderer {
   }
 
   /** @param {{x: number, z: number}} hp положение головы на поле (мировые координаты) */
-  placeCamera(hp, instant, dt = 0.016) {
+  placeCamera(hp, instantMove, dt = 0.016) {
+    const instant = instantMove || this.snapCamera;
+    this.snapCamera = false;
     const {
       distance, back, up, angledHeight, angledBack,
     } = this.layout;
     const top = this.cameraMode === 'top';
     // Наклонная камера смотрит чуть ближе к себе, чтобы ближний край поля не обрезался.
-    const lookShift = top ? 0 : 1.2;
+    const lookShift = top ? 0 : ANGLED_LOOK_SHIFT;
 
     // Камера чуть-чуть следует за головой.
     tmpVec.set(hp.x * FOLLOW_SHARE + back.x * lookShift, 0, hp.z * FOLLOW_SHARE + back.z * lookShift);
