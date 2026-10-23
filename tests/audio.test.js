@@ -123,3 +123,18 @@ test('iPhone: беззвучный режим глушит игру — тип �
   const broken = { audioSession: { get type() { return 'auto'; }, set type(v) { throw new Error(v); } } };
   assert.doesNotThrow(() => preferAmbientAudio(broken));
 });
+
+test('через Web Audio темп музыки не меняется (на iPhone это рвало звук); без него — ускоряется', () => {
+  const audio = new AudioManager();
+  audio.musicVolume = 0.5;
+  audio.startMusic();
+  audio.setIntensity(1);
+  assert.equal(audio.music.playbackRate, 1.25, 'обычный <audio> ускоряется вместе со змейкой');
+  const routed = new AudioManager();
+  routed.ctx = fakeContext();
+  routed.musicVolume = 0.5;
+  routed.startMusic();
+  routed.music.playbackRate = 1;
+  routed.setIntensity(1);
+  assert.equal(routed.music.playbackRate, 1);
+});

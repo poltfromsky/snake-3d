@@ -167,10 +167,14 @@ export class AudioManager {
     this.setMusicLevel(this.musicVolume);
   }
 
-  /** Музыка ускоряется вместе со змейкой: от 1.0 до 1.25. */
+  /**
+   * Музыка ускоряется вместе со змейкой: от 1.0 до 1.25. Только если музыка играет сама по себе:
+   * через Web Audio на iPhone смена скорости рвёт звук (обрывы и пропуски), там темп всегда обычный.
+   */
   setIntensity(value) {
     if (!this.music) return;
-    this.music.playbackRate = 1 + Math.min(Math.max(value, 0), 1) * 0.25;
+    const rate = this.musicGain ? 1 : 1 + Math.min(Math.max(value, 0), 1) * 0.25;
+    if (this.music.playbackRate !== rate) this.music.playbackRate = rate;
   }
 
   get currentTrack() {
