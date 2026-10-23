@@ -16,14 +16,30 @@ export const MUSIC_TRACKS = [
   { src: 'assets/music/itty_bitty_8_bit.mp3', title: 'Itty Bitty 8 Bit', author: 'Kevin MacLeod' },
 ];
 
+/**
+ * iPhone: переключатель «без звука» сбоку глушит игру, как другие игры. Без этого Safari
+ * считает звук страницы «воспроизведением» и играет его даже в беззвучном режиме.
+ * navigator.audioSession есть в Safari с iOS 17; в остальных браузерах ничего не делаем.
+ */
+export function preferAmbientAudio(nav = globalThis.navigator) {
+  try {
+    if (nav?.audioSession && nav.audioSession.type !== 'ambient') nav.audioSession.type = 'ambient';
+  } catch {
+    // Браузер не дал сменить тип — звук работает как раньше.
+  }
+}
+
 export class AudioManager {
   constructor() {
     this.ctx = null;
     this.musicVolume = 0.5;
     this.sfxVolume = 0.7;
     this.music = null;
+    this.musicGain = null; // громкость музыки через Web Audio (см. connectMusic)
+    this.musicWanted = false; // музыка должна играть (партия идёт), даже если сейчас громкость 0
     this.trackIndex = 0;
     this.fadeTimer = null;
+    preferAmbientAudio();
   }
 
   /**
@@ -40,25 +56,67 @@ export class AudioManager {
       this.sfxGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.connectMusic();
+  }
+
+  /**
+   * Музыка идёт через Web Audio, а не громкостью самого <audio>: на iPhone громкость <audio>
+   * программно не меняется (всегда полная), и ползунок «Музыка» там ничего не делал.
+   */
+  connectMusic() {
+    if (this.musicGain || !this.ctx || !this.music || !this.ctx.createMediaElementSource) return;
+    try {
+      const source = this.ctx.createMediaElementSource(this.music);
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = this.musicVolume;
+      source.connect(this.musicGain).connect(this.ctx.destination);
+      this.music.volume = 1;
+    } catch {
+      this.musicGain = null; // не вышло — громкостью управляет сам <audio>, как раньше
+    }
+  }
+
+  /** Текущая громкость музыки (через Web Audio или у самого <audio>). */
+  get musicLevel() {
+    if (this.musicGain) return this.musicGain.gain.value;
+    return this.music ? this.music.volume : 0;
+  }
+
+  setMusicLevel(value) {
+    if (this.musicGain) this.musicGain.gain.value = value;
+    else if (this.music) this.music.volume = value;
   }
 
   setVolumes({ musicVolume, sfxVolume }) {
     this.musicVolume = musicVolume;
     this.sfxVolume = sfxVolume;
-    if (this.music) this.music.volume = musicVolume;
     if (this.sfxGain) this.sfxGain.gain.value = sfxVolume;
+    if (this.fadeTimer === null) this.setMusicLevel(musicVolume);
+    // Музыку на ноль — она не играет вовсе (не тратит батарею); вернули громкость посреди партии — играет снова.
+    if (!this.music) return;
+    if (musicVolume === 0) this.music.pause();
+    else if (this.musicWanted && this.music.paused && this.fadeTimer === null) this.music.play().catch(() => {});
   }
 
   startMusic() {
     if (!MUSIC_TRACKS.length) return;
     this.cancelFade();
+    this.musicWanted = true;
+    if (this.musicVolume === 0) {
+      this.music?.pause();
+      return;
+    }
     if (!this.music) {
       this.music = new Audio();
       this.music.addEventListener('ended', () => this.nextTrack());
-      this.music.addEventListener('error', () => { this.music = null; });
+      this.music.addEventListener('error', () => {
+        this.music = null;
+        this.musicGain = null;
+      });
       this.loadTrack(this.trackIndex);
     }
-    this.music.volume = this.musicVolume;
+    this.connectMusic();
+    this.setMusicLevel(this.musicVolume);
     this.music.play().catch(() => {});
   }
 
@@ -75,28 +133,30 @@ export class AudioManager {
   }
 
   pauseMusic() {
+    this.musicWanted = false;
     this.cancelFade();
     this.music?.pause();
   }
 
   /**
    * Плавно убирает музыку и ставит на паузу. Нужна на итогах партии: иначе фон играет
-   * как ни в чём не бывало и заглушает звук проигрыша. На iPhone громкость у <audio>
-   * программно не меняется — там музыка просто остановится в конце затухания.
+   * как ни в чём не бывало и заглушает звук проигрыша. Затухание — через Web Audio, поэтому
+   * работает и на iPhone.
    */
   fadeOutMusic(ms = 450) {
+    this.musicWanted = false;
     const { music } = this;
     if (!music || music.paused) return;
     this.cancelFade();
-    const from = music.volume;
+    const from = this.musicLevel;
     const started = Date.now();
     this.fadeTimer = setInterval(() => {
       const t = Math.min((Date.now() - started) / ms, 1);
-      music.volume = from * (1 - t);
+      this.setMusicLevel(from * (1 - t));
       if (t < 1) return;
       this.cancelFade();
       music.pause();
-      music.volume = this.musicVolume;
+      this.setMusicLevel(this.musicVolume);
     }, 40);
   }
 
@@ -104,7 +164,7 @@ export class AudioManager {
     if (this.fadeTimer === null) return;
     clearInterval(this.fadeTimer);
     this.fadeTimer = null;
-    if (this.music) this.music.volume = this.musicVolume;
+    this.setMusicLevel(this.musicVolume);
   }
 
   /** Музыка ускоряется вместе со змейкой: от 1.0 до 1.25. */
