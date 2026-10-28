@@ -78,9 +78,15 @@ self.addEventListener('fetch', (event) => {
   // Остальное (игровой сервер) — напрямую в сеть, без кэша.
 });
 
-/** Страница с любыми параметрами (?room=…, ?e2e) — это всегда index.html. */
+/**
+ * Игра с любыми параметрами (?room=…, ?e2e) — это всегда index.html.
+ * Другие страницы сайта (privacy.html) — сами по себе, без параметров.
+ */
 function cacheKey(request) {
-  return request.mode === 'navigate' ? new URL('index.html', self.registration.scope).href : request;
+  if (request.mode !== 'navigate') return request;
+  const url = new URL(request.url);
+  const page = url.pathname.split('/').pop();
+  return new URL(page && page !== 'index.html' ? page : 'index.html', self.registration.scope).href;
 }
 
 /** Сайт: файлы этой версии из кэша, недостающие — из сети с сохранением. */

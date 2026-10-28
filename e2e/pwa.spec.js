@@ -29,6 +29,19 @@ test('service worker включается и управляет странице
   expect(errors).toEqual([]);
 });
 
+test('под service worker ссылка на политику открывает политику, а не игру', async ({ page }) => {
+  await openGame(page);
+  await expect.poll(() => page.evaluate(() => Boolean(globalThis.navigator.serviceWorker.controller)), { timeout: 45_000 })
+    .toBe(true);
+  await page.goto('/privacy.html');
+  await expect(page.locator('h1')).toHaveText(/Политика конфиденциальности/);
+  await page.goto('/privacy.html?from=app');
+  await expect(page.locator('h1')).toHaveText(/Политика конфиденциальности/);
+  // Сама игра по-прежнему открывается и с параметрами.
+  await page.goto('/?e2e');
+  await waitForGame(page);
+});
+
 test('без интернета игра открывается и в неё можно играть', async ({ page, context, browserName }) => {
   test.skip(browserName !== 'chromium', 'отключение сети для service worker — только в Chromium');
   await openGame(page, { mode: 'classic' });
