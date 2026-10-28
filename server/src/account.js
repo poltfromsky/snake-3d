@@ -7,6 +7,11 @@
  *   POST /api/account/recover  {name, device, code, key}  — забыли пароль: новый пароль по коду,
  *                                                           в ответе новый код восстановления
  *   POST /api/account/password {name, device, key, newKey} — сменить пароль, зная старый
+ *   POST /api/account/delete   {name, device, key}        — удалить профиль и все данные игрока
+ *                                                           на сервере (152-ФЗ: право на удаление)
+ *
+ * Создать профиль можно только с согласием на обработку данных (consent: true — галочка
+ * «Согласен с политикой конфиденциальности», privacy.html).
  *
  * key — ключ входа: браузер растягивает пароль в 64 шестнадцатеричных знака (src/core/auth.js),
  * сам пароль сервер не получает. В базе — только SHA-256 от ключа и от кода восстановления.
@@ -83,6 +88,9 @@ export function createAccountHandlers({
     const body = (await readJson(request)) ?? {};
     const fields = common(body);
     if (!fields || !isLoginKey(body.key)) return json({ error: 'Некорректный запрос.' }, 400, request, env);
+    if (body.consent !== true) {
+      return refuse('consent_required', 'Чтобы создать профиль, согласитесь с политикой конфиденциальности. Если галочки нет — обновите игру.', 400, request, env);
+    }
     const hash = await clientHash(request, env);
     const ownerHash = await sha256(fields.device);
 
@@ -168,7 +176,46 @@ export function createAccountHandlers({
     return json({ ok: true }, 200, request, env);
   }
 
+  /**
+   * Удалить профиль: только зная пароль (с любого устройства — вдруг старое потеряно).
+   * Стирается всё, что сервер знает об игроке под этим ником: профиль, устройства, ник, личная
+   * статистика, результаты в общей таблице, попытки входа и отзывы, подписанные этим ником.
+   * Ник после удаления свободен.
+   */
+  async function remove(request, env) {
+    const body = (await readJson(request)) ?? {};
+    const fields = common(body);
+    if (!fields || !isLoginKey(body.key)) return json({ error: 'Некорректный запрос.' }, 400, request, env);
+    const hash = await clientHash(request, env);
+    if (await tooManyFails(env, fields.key, hash)) return limitReply(request, env);
+
+    const account = await env.DB.prepare('SELECT auth_hash FROM accounts WHERE name_key = ?').bind(fields.key).first();
+    const given = await secretHash('auth', body.key);
+    const ok = Boolean(account) && safeEqual(given, account.auth_hash);
+    if (!ok) {
+      await noteAttempt(env, fields.key, hash, false);
+      return refuse('bad_login', 'Неверный пароль.', 401, request, env);
+    }
+
+    const { key } = fields;
+    // Отзывы подписаны ником как текстом: сравниваем так же, как ники (SQLite lower() не знает кириллицу).
+    const { results: signed } = await env.DB.prepare('SELECT id, name FROM feedback WHERE name IS NOT NULL').all();
+    const feedbackIds = signed.filter((row) => nameKey(row.name) === key).map((row) => row.id);
+    const results = await env.DB.batch([
+      env.DB.prepare('DELETE FROM game_stats WHERE name_key = ?').bind(key),
+      env.DB.prepare('DELETE FROM stats_meta WHERE name_key = ?').bind(key),
+      env.DB.prepare('DELETE FROM records WHERE name_key = ?').bind(key),
+      ...feedbackIds.map((id) => env.DB.prepare('DELETE FROM feedback WHERE id = ?').bind(id)),
+      env.DB.prepare('DELETE FROM nick_devices WHERE name_key = ?').bind(key),
+      env.DB.prepare('DELETE FROM nicks WHERE name_key = ?').bind(key),
+      env.DB.prepare('DELETE FROM auth_attempts WHERE name_key = ?').bind(key),
+      env.DB.prepare('DELETE FROM accounts WHERE name_key = ?').bind(key),
+    ]);
+    const [games, , records] = results.map((r) => r.meta.changes ?? 0);
+    return json({ ok: true, deleted: { games, records } }, 200, request, env);
+  }
+
   return {
-    create, login, recover, changePassword,
+    create, login, recover, changePassword, remove,
   };
 }

@@ -416,6 +416,11 @@ test.describe('профиль с паролем', () => {
     await expect(page.locator('#profile-status')).toContainText('не короче 8');
     await page.locator('#profile-new-pass').fill(password);
     await page.locator('#profile-new-pass2').fill(password);
+    // Без согласия с политикой конфиденциальности профиль не создаётся; ссылка ведёт на политику.
+    await page.locator('#profile-create button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toHaveText('Отметьте согласие с политикой конфиденциальности.');
+    await expect(page.locator('#profile-create a[href="privacy.html"]')).toBeVisible();
+    await page.locator('#profile-consent').check();
     await page.locator('#profile-create button[type=submit]').click();
 
     // Код восстановления: показан, уйти не сохранив нельзя, «Готово» — только после отметки.
@@ -477,6 +482,47 @@ test.describe('профиль с паролем', () => {
   });
 });
 
+test.describe('удаление профиля', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('профиль удаляется только с паролем: данные на сервере стёрты, ник свободен, на устройстве — выход', async ({ page }, testInfo) => {
+    test.setTimeout(120_000); // пароль считается в браузере дважды (600 000 итераций)
+    const nick = `Удал${testInfo.project.name.slice(0, 3)}${Date.now().toString(36).slice(-4)}`;
+    const password = 'пароль-для-удаления-1';
+    const errors = await openGame(page, { playerName: nick });
+    await uniqueSenderForRecords(page);
+    await page.locator('#screen-menu [data-action="profile"]').click();
+    await page.locator('#profile-new-pass').fill(password);
+    await page.locator('#profile-new-pass2').fill(password);
+    await page.locator('#profile-consent').check();
+    await page.locator('#profile-create button[type=submit]').click();
+    await expect(page.locator('#profile-code')).toBeVisible({ timeout: 30_000 });
+    await page.locator('#profile-code-saved').check();
+    await page.locator('#profile-code-done').click();
+    await expect(page.locator('#profile-me')).toBeVisible();
+
+    // Удаление: отдельный экран с предупреждением; «Отмена» возвращает в профиль; без пароля — подсказка.
+    await page.locator('#profile-delete-open').click();
+    await expect(page.locator('#profile-delete')).toBeVisible();
+    await expect(page.locator('#profile-delete .hint')).toContainText('навсегда');
+    await page.locator('#profile-delete-cancel').click();
+    await expect(page.locator('#profile-me')).toBeVisible();
+    await page.locator('#profile-delete-open').click();
+    await page.locator('#profile-delete button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toHaveText('Введите пароль.');
+    await page.locator('#profile-delete-pass').fill('не-тот-пароль-9');
+    await page.locator('#profile-delete button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toHaveText('Неверный пароль.', { timeout: 30_000 });
+    await page.locator('#profile-delete-pass').fill(password);
+    await page.locator('#profile-delete button[type=submit]').click();
+    await expect(page.locator('#profile-status')).toHaveText(`Профиль «${nick}» и его данные на сервере удалены.`, { timeout: 30_000 });
+    await expect(page.locator('#profile-create')).toBeVisible();
+    await page.locator('#screen-profile [data-action="profile-back"]').click();
+    await expect(page.locator('#btn-profile-label')).toHaveText('Войти или создать профиль');
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe('статистика профиля на всех устройствах', () => {
   test.use({ serviceWorkers: 'block' });
 
@@ -493,6 +539,7 @@ test.describe('статистика профиля на всех устройс�
     await page.locator('#screen-menu [data-action="profile"]').click();
     await page.locator('#profile-new-pass').fill(password);
     await page.locator('#profile-new-pass2').fill(password);
+    await page.locator('#profile-consent').check();
     await page.locator('#profile-create button[type=submit]').click();
     await expect(page.locator('#profile-code')).toBeVisible({ timeout: 30_000 });
     await page.locator('#profile-code-saved').check();

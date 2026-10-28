@@ -139,6 +139,9 @@ h2 { font-size: 26px; }
 }
 
 .btn:hover { background: rgba(255, 255, 255, 0.12); }
+/* Ссылка в виде кнопки (политика конфиденциальности в настройках). */
+a.btn { display: block; text-align: center; text-decoration: none; }
+.check a { color: var(--accent); }
 .btn:active { transform: scale(0.97); }
 
 .btn.primary {

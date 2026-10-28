@@ -409,6 +409,7 @@
         </div>
         <textarea id="feedback-message" rows="5" maxlength="1000" placeholder="Ваш комментарий" aria-label="Комментарий" required></textarea>
         <input id="feedback-name" maxlength="16" autocomplete="nickname" placeholder="Ник (необязательно)" aria-label="Ник">
+        <p class="hint">Отправляя отзыв, вы соглашаетесь с <a href="privacy.html" target="_blank" rel="noopener">политикой конфиденциальности</a>.</p>
         <button class="btn primary" type="submit">Отправить</button>
         <p id="feedback-status" class="status" aria-live="polite"></p>
       </form>
@@ -441,6 +442,7 @@
         <input id="profile-new-name" maxlength="16" autocomplete="username" placeholder="Ник" aria-label="Ник">
         <input id="profile-new-pass" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль (от 8 символов)" aria-label="Пароль">
         <input id="profile-new-pass2" type="password" autocomplete="new-password" maxlength="64" placeholder="Пароль ещё раз" aria-label="Пароль ещё раз">
+        <label class="check"><input type="checkbox" id="profile-consent"> <span>Согласен с <a href="privacy.html" target="_blank" rel="noopener">политикой конфиденциальности</a> и обработкой ника и игровой статистики</span></label>
         <button class="btn primary" type="submit">Создать профиль</button>
       </form>
 
@@ -471,7 +473,16 @@
         <button class="btn" type="button" data-action="profile-achievements">Достижения</button>
         <button class="btn" type="button" id="profile-change-open">Сменить пароль</button>
         <button class="btn" type="button" id="profile-logout">Выйти из профиля</button>
+        <button class="btn danger-link" type="button" id="profile-delete-open">Удалить профиль и данные</button>
       </div>
+
+      <!-- Удаление профиля: только с паролем, всё, что сервер знает об игроке (политика конфиденциальности). -->
+      <form id="profile-delete" class="stack hidden">
+        <p class="hint"><b>Это навсегда.</b> С сервера будут удалены профиль, ваша статистика, результаты в общей таблице и отзывы под этим ником. Ник освободится. Попытки и достижения на этом устройстве останутся.</p>
+        <input id="profile-delete-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Пароль" aria-label="Пароль">
+        <button class="btn primary" type="submit">Удалить навсегда</button>
+        <button type="button" class="text-btn" id="profile-delete-cancel">Отмена</button>
+      </form>
 
       <form id="profile-password" class="stack hidden">
         <input id="profile-current-pass" type="password" autocomplete="current-password" maxlength="64" placeholder="Текущий пароль" aria-label="Текущий пароль">
@@ -541,6 +552,7 @@
         <p class="hint hidden" id="update-check-status" role="status"></p>
         <button class="btn primary hidden" id="btn-settings-update" data-action="update">Обновить сейчас</button>
         <button class="btn" data-action="whats-new">История обновлений</button>
+        <a class="btn" href="privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a>
         <button class="btn install-btn hidden" data-action="install"><span class="ic" data-icon="install"></span>Установить как приложение</button>
       </div>
       <div class="field">Обучение

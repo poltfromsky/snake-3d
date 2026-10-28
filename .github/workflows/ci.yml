@@ -141,7 +141,7 @@ jobs:
           # Service worker получает номер версии и полный список файлов игры (PWA).
           node tools/stamp-sw.mjs "${GITHUB_SHA::12}"
           mkdir _site
-          cp -r index.html styles.css manifest.webmanifest changelog.json sw.js src assets _site/
+          cp -r index.html privacy.html styles.css manifest.webmanifest changelog.json sw.js src assets _site/
           # Адрес сервера подставляется из только что выполненной выкладки.
           sed -i "s|^const PRODUCTION_API = '';|const PRODUCTION_API = '${API_URL}';|" _site/src/config.js
           grep -q "PRODUCTION_API = 'https://" _site/src/config.js

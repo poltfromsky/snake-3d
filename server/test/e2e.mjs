@@ -158,15 +158,15 @@ const keyOf = (password, name = profileNick) => deriveLoginKey(password, name, I
 const deviceC = 'd'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
 const key1 = await keyOf('первый пароль 1');
 
-reply = await post('account/create', { name: profileNick, device: deviceA, key: key1 });
+reply = await post('account/create', { name: profileNick, device: deviceA, key: key1, consent: true });
 assert.equal(reply.status, 201, JSON.stringify(reply.data));
 assert.ok(isRecoveryCode(reply.data.recoveryCode), 'в ответе код восстановления');
 const code1 = reply.data.recoveryCode;
-assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: key1 })).data.code, 'account_exists');
-assert.equal((await post('account/create', { name: profileNick, device: deviceB, key: key1 })).data.code, 'nick_taken',
+assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: key1, consent: true })).data.code, 'account_exists');
+assert.equal((await post('account/create', { name: profileNick, device: deviceB, key: key1, consent: true })).data.code, 'nick_taken',
   'создать профиль чужого ника нельзя');
-assert.equal((await post('account/create', { name: profileNick, device: 'не ключ', key: key1 })).status, 400);
-assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: 'x' })).status, 400);
+assert.equal((await post('account/create', { name: profileNick, device: 'не ключ', key: key1, consent: true })).status, 400);
+assert.equal((await post('account/create', { name: profileNick, device: deviceA, key: 'x', consent: true })).status, 400);
 console.log('✔ профиль: создаётся один раз, только владельцем ника, в ответе код восстановления');
 
 const foreignTicket = await ticket();
@@ -190,7 +190,7 @@ console.log('✔ вход: неверный пароль и неизвестны
 // Подбор: после 5 неудачных попыток на ник даже верный пароль на время не принимается.
 const lockNick = `lk${Date.now().toString(36).slice(-6)}`;
 const lockKey = await keyOf('замок пароль 1', lockNick);
-assert.equal((await post('account/create', { name: lockNick, device: deviceA, key: lockKey })).status, 201);
+assert.equal((await post('account/create', { name: lockNick, device: deviceA, key: lockKey, consent: true })).status, 201);
 for (let i = 0; i < 5; i += 1) {
   assert.equal((await post('account/login', { name: lockNick, device: deviceC, key: await keyOf(`мимо пароль ${i}`, lockNick) })).status, 401);
 }
@@ -219,7 +219,7 @@ const pwNick = `pw${Date.now().toString(36).slice(-6)}`;
 const pwOld = await keyOf('старый пароль 1', pwNick);
 const pwNew = await keyOf('новый пароль 2', pwNick);
 const deviceE = 'e'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16); // лимит 3 новых ника на устройство
-assert.equal((await post('account/create', { name: pwNick, device: deviceE, key: pwOld })).status, 201);
+assert.equal((await post('account/create', { name: pwNick, device: deviceE, key: pwOld, consent: true })).status, 201);
 reply = await post('account/password', { name: pwNick, device: deviceE, key: pwNew, newKey: pwNew });
 assert.equal(reply.data.code, 'bad_login', 'не зная текущего пароля, не сменить');
 reply = await post('account/password', { name: pwNick, device: deviceE, key: pwOld, newKey: pwNew });
@@ -304,6 +304,25 @@ reply = await post('stats/sync', { name: pwNick, device: deviceC, games: [], sin
 assert.equal(reply.data.total, 0);
 assert.equal(reply.data.epoch, 1, 'второе устройство узнаёт об удалении при синхронизации');
 console.log('✔ игрок сам удаляет статистику профиля; удаление доходит до всех его устройств');
+
+// Согласие с политикой обязательно; удаление профиля — только с паролем, стирает всё и освобождает ник.
+const delNick = `dl${Date.now().toString(36).slice(-6)}`;
+const delKey = await keyOf('удалить пароль 1', delNick);
+const deviceF = 'f'.repeat(48) + Date.now().toString(16).padStart(16, '0').slice(-16);
+reply = await post('account/create', { name: delNick, device: deviceF, key: delKey });
+assert.equal(reply.data.code, 'consent_required', 'без галочки согласия профиль не создаётся');
+assert.equal((await post('account/create', { name: delNick, device: deviceF, key: delKey, consent: true })).status, 201);
+assert.equal((await post('stats/sync', { name: delNick, device: deviceF, games: [game(900)], since: 0 })).data.accepted, 1);
+reply = await post('account/delete', { name: delNick, device: deviceF, key: await keyOf('не тот пароль 3', delNick) });
+assert.equal(reply.data.code, 'bad_login', 'без пароля не удалить');
+assert.equal((await post('account/delete', { name: delNick, device: 'не ключ', key: delKey })).status, 400);
+reply = await post('account/delete', { name: delNick, device: deviceA, key: delKey });
+assert.equal(reply.status, 200, JSON.stringify(reply.data));
+assert.equal(reply.data.deleted.games, 1);
+assert.equal((await post('account/login', { name: delNick, device: deviceF, key: delKey })).data.code, 'bad_login', 'профиля больше нет');
+assert.equal((await post('stats/sync', { name: delNick, device: deviceF, games: [], since: 0 })).status, 403, 'статистики больше нет');
+assert.equal((await post('account/create', { name: delNick, device: deviceB, key: delKey, consent: true })).status, 201, 'ник освободился');
+console.log('✔ согласие при регистрации обязательно; профиль удаляется только с паролем, данные стёрты, ник свободен');
 
 const ghost = client('ZZZZZ', 'ghost');
 const gerr = await ghost.waitFor((m) => m.t === 'error');

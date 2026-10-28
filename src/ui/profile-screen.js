@@ -2,7 +2,8 @@
  * Экран «Профиль» — как в играх:
  *   не вошли → вкладки «Вход» и «Регистрация», под входом «Забыли пароль?» (код восстановления);
  *   вошли    → «Мой профиль»: ник, попытки и достижения на этом устройстве, лучшие результаты
- *              в общей таблице (с местом и значком платформы), смена пароля, выход.
+ *              в общей таблице (с местом и значком платформы), смена пароля, выход, удаление профиля.
+ * Регистрация — только с согласием с политикой конфиденциальности (privacy.html).
  *
  * Пароль никуда не отправляется: браузер превращает его в ключ входа (src/core/auth.js, ~0,5 с),
  * и на сервер уходит только он. Профиль необязателен: без него ник принадлежит этому устройству.
@@ -22,9 +23,10 @@ import { PLATFORM_ICONS } from './records-screen.js';
 
 const MODE_LABELS = Object.freeze({ classic: 'Классика', walls: 'Стены', timed: 'На время' });
 const SPEED_LABELS = Object.freeze({ slow: 'Медленно', normal: 'Нормально', fast: 'Быстро' });
-const PARTS = ['#profile-vpn', '#profile-tabs', '#profile-login', '#profile-create', '#profile-recover', '#profile-me', '#profile-password', '#profile-code'];
+const PARTS = ['#profile-vpn', '#profile-tabs', '#profile-login', '#profile-create', '#profile-recover', '#profile-me', '#profile-password',
+  '#profile-code', '#profile-delete'];
 const PASSWORD_FIELDS = ['#profile-login-pass', '#profile-new-pass', '#profile-new-pass2', '#profile-recover-pass',
-  '#profile-recover-pass2', '#profile-current-pass', '#profile-change-pass', '#profile-change-pass2'];
+  '#profile-recover-pass2', '#profile-current-pass', '#profile-change-pass', '#profile-change-pass2', '#profile-delete-pass'];
 /** Сколько ждать второго нажатия «Выйти из профиля». */
 const LOGOUT_CONFIRM_MS = 5000;
 
@@ -58,7 +60,7 @@ export function createProfileScreen({
   function only(...ids) {
     for (const id of PARTS) $(id).classList.toggle('hidden', !ids.includes(id));
     // Пока показан код восстановления или смена пароля — без лишних кнопок.
-    $('#btn-profile-stats').classList.toggle('hidden', ids.includes('#profile-code') || ids.includes('#profile-password'));
+    $('#btn-profile-stats').classList.toggle('hidden', ['#profile-code', '#profile-password', '#profile-delete'].some((id) => ids.includes(id)));
   }
 
   function clearPasswords() {
@@ -247,6 +249,10 @@ export function createProfileScreen({
       status(problem, true);
       return;
     }
+    if (!$('#profile-consent').checked) {
+      status('Отметьте согласие с политикой конфиденциальности.', true);
+      return;
+    }
     const password = $('#profile-new-pass').value;
     run('Создаём профиль…', async () => {
       const key = await deriveLoginKey(password, name);
@@ -357,6 +363,41 @@ export function createProfileScreen({
     showAuth('login');
     $('#profile-login-name').value = name;
     status(`Вы вышли из профиля «${name}».`);
+  });
+
+  $('#profile-delete-open').addEventListener('click', () => {
+    status('');
+    clearPasswords();
+    $('#profile-title').textContent = 'Удаление профиля';
+    $('#profile-state').textContent = '';
+    only('#profile-delete');
+    $('#profile-delete-pass').focus();
+  });
+
+  $('#profile-delete-cancel').addEventListener('click', () => {
+    clearPasswords();
+    status('');
+    showMe();
+  });
+
+  $('#profile-delete').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = settings.playerName;
+    const password = $('#profile-delete-pass').value;
+    if (!password) {
+      status('Введите пароль.', true);
+      return;
+    }
+    run('Удаляем профиль…', async () => {
+      const key = await deriveLoginKey(password, name);
+      await leaderboard.deleteProfile({ name, device: deviceKey(), key });
+      clearPasswords();
+      // На этом устройстве профиль больше не нужен: выходим, как по кнопке «Выйти».
+      logoutProfile(settings);
+      onChange();
+      showAuth('register');
+      status(`Профиль «${name}» и его данные на сервере удалены.`);
+    });
   });
 
   $('#profile-code-copy').addEventListener('click', async () => {

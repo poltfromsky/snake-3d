@@ -367,6 +367,7 @@ export default {
       if (url.pathname === '/api/account/login' && request.method === 'POST') return await account.login(request, env);
       if (url.pathname === '/api/account/recover' && request.method === 'POST') return await account.recover(request, env);
       if (url.pathname === '/api/account/password' && request.method === 'POST') return await account.changePassword(request, env);
+      if (url.pathname === '/api/account/delete' && request.method === 'POST') return await account.remove(request, env);
       if (url.pathname === '/api/stats/sync' && request.method === 'POST') return await stats.sync(request, env);
       if (url.pathname === '/api/stats/compare' && request.method === 'POST') return await stats.compare(request, env);
       if (url.pathname === '/api/stats/delete' && request.method === 'POST') return await stats.remove(request, env);

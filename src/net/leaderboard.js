@@ -81,7 +81,13 @@ export class Leaderboard {
    * @returns {Promise<{recoveryCode: string}>} код восстановления — показывается игроку один раз
    */
   async createProfile({ name, device, key }) {
-    return this.request('account/create', { method: 'POST', body: { name, device, key } });
+    // consent — игрок отметил согласие с политикой конфиденциальности (без него сервер откажет).
+    return this.request('account/create', {
+      method: 'POST',
+      body: {
+        name, device, key, consent: true,
+      },
+    });
   }
 
   /** Войти в профиль с этого устройства. */
@@ -99,6 +105,11 @@ export class Leaderboard {
         name, device, key, newKey,
       },
     });
+  }
+
+  /** Удалить профиль и все данные игрока на сервере (только с паролем — ключом входа). */
+  async deleteProfile({ name, device, key }) {
+    return this.request('account/delete', { method: 'POST', body: { name, device, key } });
   }
 
   /** Лучшие результаты ника во всех режимах и скоростях с местом в таблице — для профиля. */
